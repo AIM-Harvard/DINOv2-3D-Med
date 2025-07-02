@@ -93,9 +93,11 @@ The implementation includes:
 - **DINO Loss**: Custom implementation of DINO loss with temperature scheduling
 
 ## References
+- [Lightly](https://github.com/lightly-ai/lightly)
 - [DINOv2 (Facebook Research)](https://github.com/facebookresearch/dinov2)
 - [MONAI (Medical Open Network for AI)](https://github.com/Project-MONAI/MONAI)
 - [PyTorch Lightning](https://www.pytorchlightning.ai/)
+
 
 ## License
 This project is for research purposes. See individual file headers for third-party code references. 
