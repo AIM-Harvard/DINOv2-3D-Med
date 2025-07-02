@@ -16,7 +16,7 @@ This repository provides a 3D implementation of DINOv2 for self-supervised pretr
 ```
 .
 ├── scripts/
-│   └── train_dinov2.py         # Main training script
+│   └── train.py         # Main training script
 ├── models/
 │   ├── model.py                # DINOv2_3D model implementation
 │   ├── lightning_module.py     # LightningModule trainer
