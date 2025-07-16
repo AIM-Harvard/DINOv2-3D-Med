@@ -16,7 +16,7 @@ This repository provides a 3D implementation of DINOv2 for self-supervised pretr
 ```
 .
 ├── scripts/
-│   └── train_dinov2.py         # Main training script
+│   └── train.py         # Main training script
 ├── models/
 │   ├── model.py                # DINOv2_3D model implementation
 │   ├── lightning_module.py     # LightningModule trainer
@@ -93,9 +93,11 @@ The implementation includes:
 - **DINO Loss**: Custom implementation of DINO loss with temperature scheduling
 
 ## References
+- [Lightly](https://github.com/lightly-ai/lightly)
 - [DINOv2 (Facebook Research)](https://github.com/facebookresearch/dinov2)
 - [MONAI (Medical Open Network for AI)](https://github.com/Project-MONAI/MONAI)
 - [PyTorch Lightning](https://www.pytorchlightning.ai/)
+
 
 ## License
 This project is for research purposes. See individual file headers for third-party code references. 
