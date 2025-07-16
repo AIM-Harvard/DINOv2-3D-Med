@@ -10,8 +10,8 @@ import math
 import re
 from functools import partial
 from typing import Any
-
 import torch
+from torch import nn
 from pytorch_lightning import LightningModule
 from torch import Tensor
 from torch.optim import AdamW, Optimizer
@@ -23,7 +23,7 @@ from lightly.utils.scheduler import (
     cosine_schedule,
 )
 
-from models.model import DINOv2_3D
+from models.meta_arch import DINOv2_3D_Meta_Architecture
 from losses.dino import DINOv2Loss
 
 
@@ -36,12 +36,7 @@ class DINOv2_3D_LightningModule(LightningModule):
     def __init__(
         self,
         batch_size_per_device: int,
-        img_size: tuple[int, int, int] = (48, 48, 48),
-        patch_size: tuple[int, int, int] = (8, 8, 8),
         hidden_size: int = 768,
-        mlp_dim: int = 3072,
-        num_layers: int = 4,
-        num_heads: int = 4,
         ibot_separate_head: bool = True,
         base_lr: float = 0.0005,  # Reduced from 0.004 as per issue #6
         min_lr: float = 1e-6,
@@ -53,6 +48,7 @@ class DINOv2_3D_LightningModule(LightningModule):
         teacher_temp_max: float = 0.07,
         freeze_last_layer_epochs: int = 1,
         projection_dim: int = 65536,
+        backbone: nn.Module = None,
     ) -> None:
         """
         Initialize the DINOv2Trainer3D LightningModule.
@@ -75,16 +71,12 @@ class DINOv2_3D_LightningModule(LightningModule):
         self.save_hyperparameters()
 
         # Model
-        self.model = DINOv2_3D(
-            img_size=img_size,
-            patch_size=patch_size,
+        self.model = DINOv2_3D_Meta_Architecture(
             hidden_size=hidden_size,
-            mlp_dim=mlp_dim,
-            num_layers=num_layers,
-            num_heads=num_heads,
             norm_last_layer=False,
             ibot_separate_head=ibot_separate_head,
             projection_dim=projection_dim,
+            backbone=backbone,
         )
 
         # Loss
@@ -216,7 +208,7 @@ class DINOv2_3D_LightningModule(LightningModule):
                 if match:
                     layer_idx = int(match.group(1))
                     group["lr"] = lr * lr_layer(layer_idx + 1)
-            elif "vit.norm" in name:
+            elif "norm" in name:
                 # Use default lr for norm layers
                 pass
             elif "head" in name or "_dino_head" in name or "_ibot_head" in name:

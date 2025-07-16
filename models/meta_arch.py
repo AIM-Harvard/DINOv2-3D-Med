@@ -57,7 +57,7 @@ class IBOTHead(nn.Module):
         self._ibot_head.cancel_last_layer_gradients(current_epoch)
 
 
-class DINOv2_3D(nn.Module):
+class DINOv2_3D_Meta_Architecture(nn.Module):
     """
     3D DINOv2 model with teacher/student ViT backbones and DINO/iBOT heads.
     Supports block masking and teacher-student EMA updates.
@@ -65,47 +65,24 @@ class DINOv2_3D(nn.Module):
 
     def __init__(
         self,
-        img_size: tuple[int, int, int] = (48, 48, 48),
-        patch_size: tuple[int, int, int] = (8, 8, 8),
         hidden_size: int = 768,
-        mlp_dim: int = 3072,
-        num_layers: int = 12,
-        num_heads: int = 12,
-        proj_type: str = "conv",
         norm_last_layer: bool = False,
         ibot_separate_head: bool = True,
         freeze_last_layer: int = -1,
         projection_dim: int = 65536,
+        backbone: nn.Module = None,
     ):
         """
         Initialize DINOv2_3D model.
         Args: see model config for details.
         """
         super().__init__()
-
-        vit = ViT(
-            in_channels=1,
-            img_size=img_size,
-            patch_size=patch_size,
-            hidden_size=hidden_size,
-            mlp_dim=mlp_dim,
-            num_layers=num_layers,
-            num_heads=num_heads,
-            pos_embed_type="learnable",
-            classification=False,
-            dropout_rate=0.1,
-            spatial_dims=3,
-            post_activation="None",
-            qkv_bias=True,
-            save_attn=False,
-            proj_type=proj_type,
-        )
-
+      
         self.norm_last_layer = norm_last_layer
         self.ibot_separate_head = ibot_separate_head
 
         self.hidden_size = hidden_size
-        self.teacher_backbone = MaskedVisionTransformerMONAI3D(vit)
+        self.teacher_backbone = backbone
         # Freeze teacher backbone
         freeze_eval_module(self.teacher_backbone)
 
