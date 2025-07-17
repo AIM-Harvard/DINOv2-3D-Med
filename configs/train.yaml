@@ -11,11 +11,12 @@ patch_size: [16, 16, 16]
 trainer:
   _target_: pytorch_lightning.Trainer
   benchmark: True
-  max_epochs: 500
+  max_epochs: 1000
   accelerator: gpu
   strategy: ddp_find_unused_parameters_true
   enable_model_summary: False
   log_every_n_steps: 10
+  limit_train_batches: 250
   fast_dev_run: False
   num_sanity_val_steps: 0
   precision: 16-mixed
@@ -38,7 +39,7 @@ trainer:
 system:
   model: 
     _target_: project.models.DINOv2_3D_LightningModule
-    batch_size_per_device: 4
+    batch_size_per_device: 16
     hidden_size: "%hidden_size"
     ibot_separate_head: True
     base_lr: 0.00001
@@ -54,8 +55,9 @@ system:
 
   datasets:
     train:
-      _target_: monai.data.Dataset
-      data: "$monai.auto3dseg.datafold_read('/mnt/data1/datasets/AMOS/amos22/dataset.json', basedir='/mnt/data1/datasets/AMOS/amos22', key='training')[0]"
+      _target_: monai.data.PersistentDataset
+      cache_dir: "/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain/cache"
+      data: 
       transform:
           _target_: torchvision.transforms.Compose
           transforms:

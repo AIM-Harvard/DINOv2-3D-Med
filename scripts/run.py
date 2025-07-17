@@ -27,7 +27,7 @@ def run(mode, config_file: str, **config_overrides):
     """
 
     assert mode in ["train", "predict"], "Invalid mode"
-    
+
     parser = ConfigParser()
     parser.read_config(config_file)
     parser.parse()

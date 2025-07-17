@@ -16,6 +16,7 @@ from models.masked_vit_wrapper import MaskedVisionTransformerMONAI3D
 from transforms.blockmask import RandomBlockMask3D
 
 # References:
+# Thanks to the following repositories that provided the structure and necessary components for this implementation:
 #     https://github.com/facebookresearch/dinov2/blob/main/dinov2/layers
 #     https://github.com/Project-MONAI/VISTA
 #     https://github.com/lightly-ai/lightly/blob/master/benchmarks/imagenet/vitb16/dinov2.py
@@ -77,7 +78,7 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
         Args: see model config for details.
         """
         super().__init__()
-      
+
         self.norm_last_layer = norm_last_layer
         self.ibot_separate_head = ibot_separate_head
 
