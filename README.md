@@ -49,6 +49,21 @@ Here the train.yaml contains most of the heart of the configuration. primus.yaml
 - `configs/train.yaml`: Main training configuration with complete setup
 - `configs/predict.yaml`: Configuration for inference/prediction tasks
 
+## Data Preparation
+
+For now, to run a straightforward DINOv2 pipeline, all you need to do is setup your data paths in a JSON in the MONAI format. 
+
+It looks something like this
+
+```json
+{
+   "training": [
+      {"image": <path_to_image>},
+      ....
+   ]
+}
+```
+If you'd like to do more complex manipulations like sample based on a mask and so on, you can easily extend this json to include a "label" in addition to the image and use MONAI transforms to sample as you like.
 
 ## References
 - [Lightly](https://github.com/lightly-ai/lightly)
