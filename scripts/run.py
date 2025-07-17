@@ -16,7 +16,7 @@ import monai
 torch.serialization.safe_globals([monai.data.meta_tensor.MetaTensor])
 
 
-def run(config_file: str, mode: str = "train", **config_overrides):
+def run(mode, config_file: str, **config_overrides):
     """
     Run training or prediction based on the mode parameter.
 
@@ -25,6 +25,9 @@ def run(config_file: str, mode: str = "train", **config_overrides):
         mode (str): Either "train" or "predict"
         **config_overrides: Additional configuration overrides (key=value)
     """
+
+    assert mode in ["train", "predict"], "Invalid mode"
+    
     parser = ConfigParser()
     parser.read_config(config_file)
     parser.parse()

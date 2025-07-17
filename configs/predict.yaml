@@ -24,14 +24,8 @@ system:
     ckpt_path: "/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain/dinov2_3d_fixed_epoch=499.ckpt"
     model:
       _target_: project.models.DINOv2_3D_LightningModule
-      batch_size_per_device: 48
-      img_size: [128, 128, 128]
-      patch_size: [1, 16, 16]
-      # Vit-S/4 
+      batch_size_per_device: 4
       hidden_size: 768
-      mlp_dim: 3072
-      num_layers: 8
-      num_heads: 12
       ibot_separate_head: True
       base_lr: 0.00001
       layer_decay: 0.9
@@ -42,6 +36,7 @@ system:
       freeze_last_layer_epochs: 1
       projection_dim: 16384
       weight_decay: 0.04
+      backbone:
 
   datasets:
     train: null

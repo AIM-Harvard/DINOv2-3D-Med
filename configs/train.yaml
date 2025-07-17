@@ -5,6 +5,7 @@ pin_memory: True
 drop_last: True
 run_name: "DINOv2_pretrain"
 img_size: [128, 128, 128]
+hidden_size: 864
 patch_size: [16, 16, 16]
 
 trainer:
@@ -38,7 +39,7 @@ system:
   model: 
     _target_: project.models.DINOv2_3D_LightningModule
     batch_size_per_device: 4
-    hidden_size: 768
+    hidden_size: "%hidden_size"
     ibot_separate_head: True
     base_lr: 0.00001
     layer_decay: 0.9
@@ -50,18 +51,6 @@ system:
     projection_dim: 16384
     weight_decay: 0.04
     backbone:
-      _target_: project.models.masked_vit_wrapper.MaskedVisionTransformerMONAI3D
-      vit:
-        _target_: monai.networks.nets.vit.ViT # Vit-S/4 
-        in_channels: 1
-        img_size: "%img_size"
-        patch_size: "%patch_size"
-        hidden_size: 768
-        mlp_dim: 3072
-        num_layers: 8
-        num_heads: 12
-        proj_type: "conv"
-        classification: True
 
   datasets:
     train:
@@ -106,7 +95,7 @@ system:
               global_view_size: 128
               local_view_scale: [0.3, 1.0]
               local_view_size: 64
-              num_local_views: 2
+              num_local_views: 0 # No local views for now
             - _target_: torchvision.transforms.Lambda
               lambd: "$lambda x: (x, False)" # Incase you need labels.
 

@@ -133,13 +133,13 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
             self.student_ibot_head = self.student_dino_head
 
     def forward_teacher(self, x, mask=None):
-        features = self.teacher_backbone.encode(x)
+        features = self.teacher_backbone(x)
         cls_token = features[:, 0]
         features = features if mask is None else features[mask]
         return cls_token, features
 
     def forward_student(self, x, mask=None):
-        features = self.student_backbone.encode(x, mask=mask)
+        features = self.student_backbone(x, mask=mask)
         cls_tokens = features[:, 0]
         features = features if mask is None else features[mask]
         return cls_tokens, features
@@ -174,7 +174,11 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
         device = views[0].device
 
         global_views = torch.cat(views[:2])
-        local_views = torch.cat(views[2:])
+
+        if len(views) > 2:
+            local_views = torch.cat(views[2:])
+        else:
+            local_views = None
 
         # Masking
         B = len(global_views)
@@ -208,11 +212,14 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
         )
 
         # Local views
-        student_local_cls_token, _ = self.forward_student(local_views, mask=None)
-        student_local_cls_token = self.student_dino_head(student_local_cls_token)
-        student_cls_token = torch.cat(
-            [student_global_cls_token, student_local_cls_token], dim=0
-        )
+        if local_views is not None:
+            student_local_cls_token, _ = self.forward_student(local_views, mask=None)
+            student_local_cls_token = self.student_dino_head(student_local_cls_token)
+            student_cls_token = torch.cat(
+                [student_global_cls_token, student_local_cls_token], dim=0
+            )
+        else:
+            student_cls_token = student_global_cls_token
 
         out = {
             "teacher_cls_token": teacher_cls_token,
@@ -235,5 +242,5 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
         Returns:
             CLS token features of shape (B, hidden_size)
         """
-        backbone_features = self.student_backbone.encode(x, mask=None)
+        backbone_features = self.student_backbone(x, mask=None)
         return backbone_features[:, 0]  # Return CLS token only
