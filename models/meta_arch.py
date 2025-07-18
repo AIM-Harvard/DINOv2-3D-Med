@@ -8,11 +8,8 @@ import torch
 from torch import nn
 
 from lightly.models.modules import DINOProjectionHead
-from monai.networks.nets.vit import ViT
 from lightly.utils.scheduler import cosine_schedule
 from lightly.models.utils import update_momentum
-
-from models.masked_vit_wrapper import MaskedVisionTransformerMONAI3D
 from transforms.blockmask import RandomBlockMask3D
 
 # References:

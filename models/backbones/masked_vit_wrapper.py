@@ -55,8 +55,12 @@ class MaskedVisionTransformerMONAI3D(nn.Module):
 
         # Get patch embeddings and reshape if needed
         embeddings = self.vit.patch_embedding.patch_embeddings(x)
+
         if len(embeddings.shape) == 5:
             embeddings = embeddings.flatten(2).transpose(1, 2)
+
+        # Add position embeddings
+        embeddings = embeddings + self.vit.patch_embedding.position_embeddings
 
         # Add cls token
         cls_tokens = (

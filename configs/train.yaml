@@ -1,9 +1,6 @@
 # This version of the YAML uses processed patches
 project: /home/suraj/Repositories/DINOv2_3D
-num_workers: 8
-pin_memory: True
-drop_last: True
-run_name: "DINOv2_pretrain"
+run_name: "DINOv2_pretrain_primus"
 img_size: [128, 128, 128]
 hidden_size: 864
 patch_size: [16, 16, 16]
@@ -20,7 +17,7 @@ trainer:
   fast_dev_run: False
   num_sanity_val_steps: 0
   precision: 16-mixed
-  devices: 3
+  devices: 2
   detect_anomaly: False
   sync_batchnorm: True
   logger:
@@ -36,9 +33,8 @@ trainer:
       every_n_epochs: 1
       save_on_train_epoch_end: True
 
-system:
-  model: 
-    _target_: project.models.DINOv2_3D_LightningModule
+lightning_module:
+    _target_: project.training.DINOv2_3D_LightningModule
     batch_size_per_device: 16
     hidden_size: "%hidden_size"
     ibot_separate_head: True
@@ -53,10 +49,16 @@ system:
     weight_decay: 0.04
     backbone:
 
-  datasets:
-    train:
-      _target_: monai.data.PersistentDataset
-      cache_dir: "/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain/cache"
+data_module:
+  _target_: project.training.DataModule
+  num_workers: 8
+  batch_size: 16
+  pin_memory: True
+  drop_last: True
+  train_dataset:
+    _target_: project.utils.safe_dataset.SafeDataset # Dataset that reshuffles erroneous data! Use carefully as it might skip data 
+    dataset:
+      _target_: monai.data.Dataset
       data: 
       transform:
           _target_: torchvision.transforms.Compose
@@ -97,9 +99,6 @@ system:
               global_view_size: 128
               local_view_scale: [0.3, 1.0]
               local_view_size: 64
-              num_local_views: 0 # No local views for now
+              num_local_views: 0 # No local views for now, we need to add suport for interpolated position embeddings
             - _target_: torchvision.transforms.Lambda
               lambd: "$lambda x: (x, False)" # Incase you need labels.
-
-    val: null
-    test: null 

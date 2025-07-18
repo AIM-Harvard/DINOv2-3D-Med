@@ -38,7 +38,7 @@ If you do not want to use uv, you could just as easily do a `pip install -e .` i
 ### Training
 Run the training script with the default training config:
 ```bash
-python -m scripts.run train --config_file=./configs/train.yaml,./configs/models/primus.yaml,./configs/datasets/amos.yaml
+python -m scripts.run fit --config_file=./configs/train.yaml,./configs/models/primus.yaml,./configs/datasets/amos.yaml
 ```
 
 Here the train.yaml contains most of the heart of the configuration. primus.yaml provides the backbone to use for DINOv2 and amos.yaml provides the path to the dataset to be used.

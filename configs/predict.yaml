@@ -18,25 +18,21 @@ trainer:
       - _target_: project.callbacks.prediction_saver.SavePredictions
         path: /home/suraj/Repositories/DINOv2_3D/predictions.csv
 
-system:
-  model: 
-    _target_: lighter.utils.model.adjust_prefix_and_load_state_dict
-    ckpt_path: "/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain/dinov2_3d_fixed_epoch=499.ckpt"
-    model:
-      _target_: project.models.DINOv2_3D_LightningModule
-      batch_size_per_device: 4
-      hidden_size: 768
-      ibot_separate_head: True
-      base_lr: 0.00001
-      layer_decay: 0.9
-      gradient_clip_val: 3.0
-      teacher_temp_warmup_epochs: 30
-      teacher_temp_min: 0.005
-      teacher_temp_max: 0.005
-      freeze_last_layer_epochs: 1
-      projection_dim: 16384
-      weight_decay: 0.04
-      backbone:
+lightning_module:
+    _target_: project.models.DINOv2_3D_LightningModule
+    batch_size_per_device: 4
+    hidden_size: 768
+    ibot_separate_head: True
+    base_lr: 0.00001
+    layer_decay: 0.9
+    gradient_clip_val: 3.0
+    teacher_temp_warmup_epochs: 30
+    teacher_temp_min: 0.005
+    teacher_temp_max: 0.005
+    freeze_last_layer_epochs: 1
+    projection_dim: 16384
+    weight_decay: 0.04
+    backbone:
 
   datasets:
     train: null
