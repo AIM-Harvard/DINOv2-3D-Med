@@ -5,7 +5,7 @@ lightning_module#backbone:
   eva_numheads: 12
   input_channels: 1
   num_classes: 1
-  patch_embed_size: "%patch_size"
   input_shape: "%img_size"
+  patch_embed_size: "%patch_size"
   patch_drop_rate: 0.0
   classification: True

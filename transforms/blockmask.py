@@ -16,7 +16,7 @@ class RandomBlockMask3D(nn.Module):
 
     def __init__(
         self,
-        ratio_min: float = 0.3,
+        ratio_min: float = 0.1,
         ratio_max: float = 0.5,
         min_block_size: int = 1,
         max_block_size: Optional[int] = None,

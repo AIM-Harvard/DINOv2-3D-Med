@@ -145,7 +145,7 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
     def update_teacher(self, global_step: int, max_steps: int) -> None:
         """Update teacher using EMA with cosine momentum schedule."""
         momentum = cosine_schedule(
-            step=global_step, max_steps=max_steps, start_value=0.994, end_value=1.0
+            step=global_step, max_steps=max_steps, start_value=0.992, end_value=1.0
         )
 
         # Remove problematic device movement logic

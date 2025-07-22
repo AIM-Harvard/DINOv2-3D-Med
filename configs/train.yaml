@@ -1,14 +1,14 @@
 # This version of the YAML uses processed patches
 project: /home/suraj/Repositories/DINOv2_3D
 run_name: "DINOv2_pretrain_primus"
-img_size: [128, 128, 128]
+img_size: [160, 160, 160]
 hidden_size: 864
-patch_size: [16, 16, 16]
+patch_size: [8, 8, 8]
 
 trainer:
   _target_: pytorch_lightning.Trainer
   benchmark: True
-  max_epochs: 1000
+  max_epochs: 50
   accelerator: gpu
   strategy: ddp_find_unused_parameters_true
   enable_model_summary: False
@@ -17,7 +17,7 @@ trainer:
   fast_dev_run: False
   num_sanity_val_steps: 0
   precision: 16-mixed
-  devices: 2
+  devices: 3
   detect_anomaly: False
   sync_batchnorm: True
   logger:
@@ -38,21 +38,21 @@ lightning_module:
     batch_size_per_device: 16
     hidden_size: "%hidden_size"
     ibot_separate_head: True
-    base_lr: 0.00001
+    base_lr: 0.0002
     layer_decay: 0.9
     gradient_clip_val: 3.0
     teacher_temp_warmup_epochs: 30
-    teacher_temp_min: 0.005
-    teacher_temp_max: 0.005
+    teacher_temp_min: 0.04
+    teacher_temp_max: 0.07
     freeze_last_layer_epochs: 1
-    projection_dim: 16384
+    projection_dim: 65536
     weight_decay: 0.04
     backbone:
 
 data_module:
   _target_: project.training.DataModule
-  num_workers: 8
-  batch_size: 16
+  num_workers: 12
+  batch_size: 2
   pin_memory: True
   drop_last: True
   train_dataset:
@@ -96,9 +96,9 @@ data_module:
               lambd: "$lambda x: x['image'].as_tensor()"
             - _target_: project.transforms.dinov2_aug.DINOv2Augmentation3D
               global_view_scale: [0.3, 1.0]
-              global_view_size: 128
+              global_view_size: "$@img_size[0]"
               local_view_scale: [0.3, 1.0]
-              local_view_size: 64
+              local_view_size: "$@img_size[0]//2"
               num_local_views: 0 # No local views for now, we need to add suport for interpolated position embeddings
             - _target_: torchvision.transforms.Lambda
               lambd: "$lambda x: (x, False)" # Incase you need labels.
