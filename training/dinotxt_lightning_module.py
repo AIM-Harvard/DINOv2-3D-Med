@@ -23,11 +23,11 @@ from lightly.utils.scheduler import (
     cosine_schedule,
 )
 
-from models.meta_arch import DINOv2_3D_Meta_Architecture
-from losses.dino import DINOv2Loss
+from models.multimodal_meta_arch import DINOtxtMetaArchitecture
+from losses.image_text_alignment import ImageTextAlignmentLoss
 
 
-class DINOv2_3D_LightningModule(LightningModule):
+class DINOtxt_LightningModule(LightningModule):
     """
     PyTorch LightningModule for 3D DINOv2 self-supervised learning.
     Implements training, prediction, optimizer config, and teacher-student logic.
@@ -35,20 +35,16 @@ class DINOv2_3D_LightningModule(LightningModule):
 
     def __init__(
         self,
+        vision_encoder: nn.Module,
+        text_encoder: nn.Module,
         batch_size_per_device: int,
-        hidden_size: int = 768,
-        ibot_separate_head: bool = True,
-        base_lr: float = 0.0005,  # Reduced from 0.004 as per issue #6
+        base_lr: float = 0.0001,
         min_lr: float = 1e-6,
         weight_decay: float = 0.04,
         layer_decay: float = 0.9,
         gradient_clip_val: float = 3.0,
-        teacher_temp_warmup_epochs: int = 30,
-        teacher_temp_min: float = 0.04,
-        teacher_temp_max: float = 0.07,
-        freeze_last_layer_epochs: int = 1,
-        projection_dim: int = 65536,
-        backbone: nn.Module = None,
+        learnable_temperature: bool = True,
+        criterion: nn.Module = None,
     ) -> None:
         """
         Initialize the DINOv2Trainer3D LightningModule.
@@ -62,37 +58,22 @@ class DINOv2_3D_LightningModule(LightningModule):
         self.weight_decay = weight_decay
         self.layer_decay = layer_decay
         self.gradient_clip_val = gradient_clip_val
-        self.teacher_temp_warmup_epochs = teacher_temp_warmup_epochs
-        self.teacher_temp_min = teacher_temp_min
-        self.teacher_temp_max = teacher_temp_max
-        self.freeze_last_layer_epochs = freeze_last_layer_epochs
         self.metrics = {"train": None, "val": None}
 
         self.save_hyperparameters()
 
         # Model
-        self.model = DINOv2_3D_Meta_Architecture(
-            hidden_size=hidden_size,
-            norm_last_layer=False,
-            ibot_separate_head=ibot_separate_head,
-            projection_dim=projection_dim,
-            backbone=backbone,
+        self.model = DINOtxtMetaArchitecture(
+            vision_encoder=vision_encoder,
+            text_encoder=text_encoder,
+            learnable_temperature=learnable_temperature,
         )
 
         # Loss
-        self.criterion = DINOv2Loss(
-            teacher_temp_min=teacher_temp_min,
-            teacher_temp_max=teacher_temp_max,
-            teacher_temp_warmup_epochs=teacher_temp_warmup_epochs,
-            output_dim=projection_dim,
-            ibot_loss_weight=1.0,
-            koleo_loss_weight=0.1,
+        self.criterion = criterion or ImageTextAlignmentLoss(
+            learnable_temperature=learnable_temperature,
         )
 
-        # self.online_classifier = OnlineLinearClassifier(
-        #     feature_dim=768,
-        #     num_classes=num_classes,
-        # )
 
     def predict_step(
         self, batch: tuple[list[Tensor], Tensor, list[str]], batch_idx: int
@@ -100,7 +81,7 @@ class DINOv2_3D_LightningModule(LightningModule):
         """
         Inference step for prediction mode.
         Args:
-            batch: Tuple of (inputs, targets, meta)
+            batch: Tuple of (i@nputs, targets, meta)
             batch_idx: Batch index
         Returns:
             Model outputs
@@ -113,10 +94,11 @@ class DINOv2_3D_LightningModule(LightningModule):
     def training_step(
         self, batch: tuple[list[Tensor], Tensor, list[str]], batch_idx: int
     ) -> Tensor:
-        views, targets = batch[0], batch[1]
+        assert "image" in batch and "text" in batch, "Batch must contain image and text"
+        images, texts = batch["image"], batch["text"]
 
-        # Forward pass
-        outputs = self.model(views)
+        # Tokenize texts if they are raw strings
+        outputs = self.model(images, texts)
 
         # Calculate losses with proper scheduling
         loss_dict = self.criterion(
@@ -124,23 +106,12 @@ class DINOv2_3D_LightningModule(LightningModule):
         )
 
         # Log losses
-        self.log_dict(
-            {
-                "train_loss": loss_dict["total_loss"],
-                "train_dino_loss": loss_dict["dino_loss"],
-                "train_ibot_loss": loss_dict["ibot_loss"]
-                if loss_dict["ibot_loss"] is not None
-                else 0.0,
-                "train_koleo_loss": loss_dict["koleo_loss"]
-                if loss_dict["koleo_loss"] is not None
-                else 0.0,
-                "teacher_temp": loss_dict["teacher_temp"],
-                "global_step": float(self.trainer.global_step),  # Add for debugging
-            },
-            prog_bar=False,
-            sync_dist=True,
-            batch_size=len(targets),
-        )
+        log_dict = {}
+        for key, value in loss_dict.items():
+            log_dict[f"train_{key}"] = value if value is not None else 0.0
+
+        log_dict["global_step"] = float(self.trainer.global_step)
+        self.log_dict(log_dict, prog_bar=False, sync_dist=True, batch_size=len(targets))
         return loss_dict["total_loss"]
 
     def validation_step(

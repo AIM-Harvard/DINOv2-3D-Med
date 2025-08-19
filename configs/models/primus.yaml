@@ -9,3 +9,5 @@ lightning_module#backbone:
   patch_embed_size: "%patch_size"
   patch_drop_rate: 0.0
   classification: True
+  init_values: 0.01
+  scale_attn_inner: True

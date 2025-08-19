@@ -54,8 +54,6 @@ class SafeDataset(Dataset):
                 return item
             except Exception as e:
                 print(f"Error at index {current_index}, trying another sample. \nException: {e}\n{traceback.format_exc()}")
-                # Try next index (with wraparound)
-                current_index = (current_index + 1) % len(self.dataset)
         
         # If we've exhausted retries, raise an exception
         raise RuntimeError(f"Failed to load any sample after {max_retries} attempts starting from index {index}")

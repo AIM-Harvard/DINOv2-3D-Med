@@ -34,7 +34,38 @@ trainer:
       save_on_train_epoch_end: True
 
 lightning_module:
-    _target_: project.training.DINOv2_3D_LightningModule
+    _target_: project.training.DINOtxt_LightningModule
+    batch_size_per_device: 2
+    vision_encoder: 
+      _target_: project.models.backbones.vision_enc_wrapper.VisionEncoder_w_Blocks
+      backbone:
+        _target_: project.models.backbones.Primus
+        embed_dim: "%hidden_size"
+        eva_depth: 16
+        eva_numheads: 12
+        input_channels: 1
+        num_classes: 1
+        input_shape: "%img_size"
+        patch_embed_size: "%patch_size"
+        patch_drop_rate: 0.0
+        classification: True
+    text_encoder:
+      _target_: project.models.backbones.text_encoder.TextEncoder
+      model_name: "openai/clip-vit-base-patch32"
+      output_dim: "%hidden_size"
+      freeze_encoder: True
+      use_projection: True
+      pooling_strategy: "cls"
+      max_length: 77
+
+    vision_backbone:
+        _target_: project.models.backbones.vision_enc_wrapper.create_enhanced_vision_encoder
+        backbone:
+            _target_: timm.models.vision_transformer.vit_base_patch16_224
+            img_size: 224
+            patch_size: 16
+            embed_dim: 768
+    text
     batch_size_per_device: 16
     hidden_size: "%hidden_size"
     ibot_separate_head: True
