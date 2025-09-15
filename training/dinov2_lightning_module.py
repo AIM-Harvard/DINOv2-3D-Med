@@ -69,8 +69,6 @@ class DINOv2_3D_LightningModule(LightningModule):
         self.freeze_last_layer_epochs = freeze_last_layer_epochs
         self.metrics = {"train": None, "val": None}
 
-        self.save_hyperparameters()
-
         # Model
         self.model = DINOv2_3D_Meta_Architecture(
             hidden_size=hidden_size,
@@ -276,38 +274,9 @@ class DINOv2_3D_LightningModule(LightningModule):
         update_param_groups(optimizer, updates=updates)
 
     def on_train_batch_end(self, outputs, batch, batch_idx):
-        # EMA update of teacher
+        # EMA update of teacher - DDP handles synchronization automatically
         max_steps = max(self.trainer.estimated_stepping_batches, 1000)
-
-        # Update teacher - this should work fine in DDP
         self.model.update_teacher(
             global_step=self.trainer.global_step, max_steps=max_steps
         )
-
-        # Remove manual synchronization - it's causing the hangups
-        # DDP will handle this automatically after the backward pass
         return super().on_train_batch_end(outputs, batch, batch_idx)
-
-    def _sync_teacher_parameters(self):
-        """Synchronize teacher parameters across all DDP processes."""
-        # Remove the problematic conditional synchronization
-        # The issue is that all processes need to participate in broadcast
-
-        if self.trainer.world_size <= 1:
-            return  # No sync needed for single GPU
-
-        # Use all_reduce instead of broadcast to avoid deadlocks
-        with torch.no_grad():
-            for param in self.model.teacher_backbone.parameters():
-                torch.distributed.all_reduce(
-                    param.data, op=torch.distributed.ReduceOp.AVG
-                )
-            for param in self.model.teacher_dino_head.parameters():
-                torch.distributed.all_reduce(
-                    param.data, op=torch.distributed.ReduceOp.AVG
-                )
-            if self.model.ibot_separate_head:
-                for param in self.model.teacher_ibot_head.parameters():
-                    torch.distributed.all_reduce(
-                        param.data, op=torch.distributed.ReduceOp.AVG
-                    )
