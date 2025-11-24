@@ -73,4 +73,16 @@ If you'd like to do more complex manipulations like sample based on a mask and s
 
 
 ## License
-This project is provided under MIT License. See individual file headers for third-party code references. 
+Copyright &copy; 2025 Suraj Pai, Vasco Prudente
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
