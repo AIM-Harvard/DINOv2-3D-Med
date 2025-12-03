@@ -112,20 +112,7 @@ class Primus(nn.Module):
         # Apply masking if provided
         if mask is not None:
             actual_sequence_length = x.shape[1]
-
-            # Adjust mask size if needed
-            if mask.shape[1] != actual_sequence_length:
-                if mask.shape[1] > actual_sequence_length:
-                    mask = mask[:, :actual_sequence_length]
-                else:
-                    extended_mask = torch.zeros(
-                        (B, actual_sequence_length),
-                        dtype=torch.bool,
-                        device=mask.device,
-                    )
-                    extended_mask[:, : mask.shape[1]] = mask
-                    mask = extended_mask
-
+            mask = mask[:, 1: actual_sequence_length + 1]
             # Apply mask tokens
             mask_tokens = self.mask_token.expand(B, actual_sequence_length - 1, -1)
             w = mask[:, 1:].unsqueeze(-1).type_as(mask_tokens)
