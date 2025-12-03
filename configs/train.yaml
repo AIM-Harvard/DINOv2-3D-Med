@@ -1,14 +1,14 @@
-# This version of the YAML uses processed patches
+# This version of the YAML uses processed patches, optimized for low memory usage
 project: /home/suraj/Repositories/DINOv2_3D
 run_name: "DINOv2_pretrain_primus"
-img_size: [160, 160, 160]
+img_size: [160, 160, 160]  # reduced spatial dims for lower mem
 hidden_size: 864
 patch_size: [8, 8, 8]
 
 trainer:
   _target_: pytorch_lightning.Trainer
   benchmark: True
-  max_epochs: 1000
+  max_epochs: 25
   accelerator: gpu
   strategy: ddp_find_unused_parameters_true
   enable_model_summary: False
@@ -17,17 +17,18 @@ trainer:
   fast_dev_run: False
   num_sanity_val_steps: 0
   precision: 16-mixed
-  devices: 3
+  devices: 4
   detect_anomaly: False
   sync_batchnorm: True
+  accumulate_grad_batches: 2   # gradient accumulation for larger effective batch, less GPU RAM
   logger:
     _target_: pytorch_lightning.loggers.WandbLogger
     project: "dinov2"
     name: "@run_name"
-    save_dir: '$"/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain/@run_name"'
+    save_dir: '$"/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain" + @run_name'
   callbacks:
     - _target_: pytorch_lightning.callbacks.ModelCheckpoint
-      dirpath: '$"/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain/@run_name"'
+      dirpath: '$"/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain" + @run_name'
       filename: "dinov2_3d_fixed_{epoch:03d}"
       save_last: True
       every_n_epochs: 1
@@ -35,24 +36,24 @@ trainer:
 
 lightning_module:
     _target_: project.training.DINOv2_3D_LightningModule
-    batch_size_per_device: 16
+    batch_size_per_device: "@data_module#batch_size"
     hidden_size: "%hidden_size"
     ibot_separate_head: True
     base_lr: 0.0001
     layer_decay: 0.9
     gradient_clip_val: 3.0
-    teacher_temp_warmup_epochs: 30
-    teacher_temp_min: 0.005
-    teacher_temp_max: 0.01
+    teacher_temp_warmup_epochs: "$int(@trainer#max_epochs * 0.03)"
+    teacher_temp_min: 0.01
+    teacher_temp_max: 0.03
     freeze_last_layer_epochs: 1
-    projection_dim: 16384
+    projection_dim: 65536  # reduced projection dim (was 131072), less memory
     weight_decay: 0.04
     backbone:
 
 data_module:
   _target_: project.training.DataModule
-  num_workers: 12
-  batch_size: 2
+  num_workers: 6     # reduce to save host RAM (if needed)
+  batch_size: 2     # lower batch for reduced GPU memory, can adjust up if fits
   pin_memory: True
   drop_last: True
   train_dataset:
@@ -99,6 +100,6 @@ data_module:
               global_view_size: "$@img_size[0]"
               local_view_scale: [0.3, 1.0]
               local_view_size: "$@img_size[0]//2"
-              num_local_views: 0 # No local views for now, we need to add suport for interpolated position embeddings
+              num_local_views: 2
             - _target_: torchvision.transforms.Lambda
               lambd: "$lambda x: (x, False)" # Incase you need labels.

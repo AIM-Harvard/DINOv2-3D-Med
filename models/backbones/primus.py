@@ -1,6 +1,5 @@
 from dynamic_network_architectures.architectures.primus import Primus as _Primus
-from dynamic_network_architectures.building_blocks.eva import Eva
-from timm.layers import RotaryEmbeddingCat
+from .eva import Eva
 import torch
 from torch import nn
 from timm.layers import trunc_normal_
@@ -11,10 +10,12 @@ import numpy as np
 from dynamic_network_architectures.building_blocks.patch_encode_decode import (
     LayerNormNd,
     PatchDecode,
-    PatchEmbed,
 )
+from ..dynamic_utils import DynamicPatchEmbed
+from ..rope import RotaryPositionEmbedding
 from dynamic_network_architectures.initialization.weight_init import InitWeights_He
-from typing import Tuple
+from typing import Tuple, Literal
+import math
 
 
 class Primus(nn.Module):
@@ -37,7 +38,7 @@ class Primus(nn.Module):
         patch_drop_rate: float = 0.0,  # drops input patches, may be used for MAE style pretraining
         proj_drop_rate: float = 0.0,  # drops out things related to the projection. That is in the MLP and at the end of EVA attention
         attn_drop_rate: float = 0.0,  # drops attention, meaning connections between patches may bebroken up at random
-        rope_impl=RotaryEmbeddingCat,
+        rope_impl=RotaryPositionEmbedding,
         rope_kwargs=None,
         init_values=None,
         scale_attn_inner=False,
@@ -47,7 +48,7 @@ class Primus(nn.Module):
         ref_feat_shape = tuple(
             [i // ds for i, ds in zip(input_shape, patch_embed_size)]
         )
-        self.down_projection = PatchEmbed(patch_embed_size, input_channels, embed_dim)
+        self.down_projection = DynamicPatchEmbed(patch_embed_size, input_channels, embed_dim)
         self.up_projection = PatchDecode(
             patch_embed_size,
             embed_dim,
@@ -100,23 +101,13 @@ class Primus(nn.Module):
         self.sequence_length = np.prod(ref_feat_shape) + (1 if classification else 0)
         self.grid_size = ref_feat_shape
 
-    def _pos_embed(self, x):
-        pos_embed = self.vit.pos_embed
-        rot_pos_embed = self.vit.rope.get_embed() if self.vit.rope is not None else None
-
-        if pos_embed is not None:
-            x = x + pos_embed
-
-        x = self.vit.pos_drop(x)
-        return x, rot_pos_embed
-
     def forward(self, x, mask=None):
-        FW, FH, FD = x.shape[2:]  # Full W , ...
+        FD, FH, FW = x.shape[2:]  # Full D, H, W
         x = self.down_projection(x)
         # last output of the encoder is the input to EVA
-        B, C, W, H, D = x.shape
-        num_patches = W * H * D
-        x = rearrange(x, "b c w h d -> b (w h d) c")
+        B, C, D, H, W = x.shape
+        num_patches = D * H * W
+        x = rearrange(x, "b c d h w -> b (d h w) c")
 
         # Apply masking if provided
         if mask is not None:
@@ -153,14 +144,7 @@ class Primus(nn.Module):
         if self.cls_token is not None:
             x = torch.cat((self.cls_token.expand(B, -1, -1), x), dim=1)
 
-        x, rot_pos_embed = self._pos_embed(x)
-        for blk in self.vit.blocks:
-            if self.vit.grad_checkpointing and not torch.jit.is_scripting():
-                x = checkpoint(blk, x, rope=rot_pos_embed)
-            else:
-                x = blk(x, rope=rot_pos_embed)
-
-        x = self.vit.norm(x)
+        x, _ = self.vit.forward_features(x, spatial_size=(D, H, W))
 
         # Remove register tokens (but not class tokens) after forward pass
         if self.register_tokens is not None:
@@ -170,5 +154,7 @@ class Primus(nn.Module):
             end_idx = start_idx + num_reg_tokens
             # Remove register tokens from x
             x = torch.cat((x[:, :start_idx, :], x[:, end_idx:, :]), dim=1)
-
+        
         return x
+
+

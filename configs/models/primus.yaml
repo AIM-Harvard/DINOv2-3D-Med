@@ -8,6 +8,8 @@ lightning_module#backbone:
   input_shape: "%img_size"
   patch_embed_size: "%patch_size"
   patch_drop_rate: 0.0
+  drop_path_rate: 0.2
+  attn_drop_rate: 0
   classification: True
-  init_values: 0.01
+  init_values: 0.1
   scale_attn_inner: True
