@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 from typing import Optional, Dict, Any
 from transformers import (
-    AutoModel, 
-    AutoTokenizer, 
+    AutoModel,
+    AutoTokenizer,
 )
 
 
@@ -17,7 +17,7 @@ class TextEncoder(nn.Module):
     Wrapper for HuggingFace pretrained text encoders.
     Supports various text models with optional projection heads.
     """
-    
+
     def __init__(
         self,
         model_name: str = "openai/clip-vit-base-patch32",
@@ -29,7 +29,7 @@ class TextEncoder(nn.Module):
     ):
         """
         Initialize HuggingFace text encoder.
-        
+
         Args:
             model_name: HuggingFace model identifier
             output_dim: Output feature dimension
@@ -39,33 +39,33 @@ class TextEncoder(nn.Module):
             max_length: Maximum sequence length
         """
         super().__init__()
-        
+
         self.model_name = model_name
         self.output_dim = output_dim
         self.pooling_strategy = pooling_strategy
         self.max_length = max_length
-        
+
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.encoder = AutoModel.from_pretrained(model_name)
         self.embed_dim = self.encoder.config.hidden_size
-        
+
         # Freeze encoder if requested
         if freeze_encoder:
             for param in self.encoder.parameters():
                 param.requires_grad = False
-        
+
         # Optional projection head
         if use_projection and self.embed_dim != output_dim:
             self.projection = nn.Linear(self.embed_dim, output_dim)
         else:
             self.projection = None
-    
+
     def tokenize(
-        self, 
-        texts: list, 
+        self,
+        texts: list,
         return_tensors: str = "pt",
         padding: bool = True,
-        truncation: bool = True
+        truncation: bool = True,
     ) -> Dict[str, torch.Tensor]:
         """Tokenize input texts."""
         return self.tokenizer(
@@ -73,13 +73,11 @@ class TextEncoder(nn.Module):
             return_tensors=return_tensors,
             padding=padding,
             truncation=truncation,
-            max_length=self.max_length
+            max_length=self.max_length,
         )
-    
+
     def pool_sequence_outputs(
-        self, 
-        sequence_output: torch.Tensor,
-        attention_mask: torch.Tensor
+        self, sequence_output: torch.Tensor, attention_mask: torch.Tensor
     ) -> torch.Tensor:
         """Pool sequence outputs to get sentence representation."""
         if self.pooling_strategy == "cls":
@@ -98,21 +96,21 @@ class TextEncoder(nn.Module):
             return sequence_output[batch_indices, seq_lengths]
         else:
             raise ValueError(f"Unknown pooling strategy: {self.pooling_strategy}")
-    
+
     def forward(
         self,
         input_ids: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
-        return_dict: bool = False
+        return_dict: bool = False,
     ) -> torch.Tensor:
         """
         Forward pass through text encoder.
-        
+
         Args:
             input_ids: Token IDs [batch_size, seq_len]
             attention_mask: Attention mask [batch_size, seq_len]
             return_dict: Whether to return dict with additional info
-            
+
         Returns:
             Text features [batch_size, output_dim]
         """
@@ -127,17 +125,16 @@ class TextEncoder(nn.Module):
             text_features = self.pool_sequence_outputs(
                 outputs.last_hidden_state, attention_mask
             )
-        
+
         # Apply projection if available
         if self.projection is not None:
             text_features = self.projection(text_features)
-        
+
         if return_dict:
             return {
-                'text_features': text_features,
-                'last_hidden_state': outputs.last_hidden_state,
-                'pooler_output': getattr(outputs, 'pooler_output', None)
+                "text_features": text_features,
+                "last_hidden_state": outputs.last_hidden_state,
+                "pooler_output": getattr(outputs, "pooler_output", None),
             }
-        
-        return text_features
 
+        return text_features

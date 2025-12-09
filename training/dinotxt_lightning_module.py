@@ -74,7 +74,6 @@ class DINOtxt_LightningModule(LightningModule):
             learnable_temperature=learnable_temperature,
         )
 
-
     def predict_step(
         self, batch: tuple[list[Tensor], Tensor, list[str]], batch_idx: int
     ) -> Tensor:
