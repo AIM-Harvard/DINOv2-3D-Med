@@ -1,6 +1,7 @@
 # DINOv2 3D Prediction Configuration
 
 vars:
+    amos_dataset: "/mnt/data1/datasets/AMOS/amos22"
     num_workers: 8
     img_size: [160, 160, 160]
 
@@ -44,7 +45,7 @@ data:
     pin_memory: true
     predict_dataset:
         _target_: monai.data.Dataset
-        data: "$monai.auto3dseg.datafold_read('/mnt/data1/datasets/AMOS/amos22/dataset.json', basedir='/mnt/data1/datasets/AMOS/amos22', key='validation')[0]"
+        data: "$monai.auto3dseg.datafold_read(@vars::amos_dataset + '/dataset.json', basedir=@vars::amos_dataset, key='validation')[0]"
         transform:
             _target_: torchvision.transforms.Compose
             transforms:

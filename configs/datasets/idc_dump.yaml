@@ -1,7 +1,10 @@
 # IDC Dataset Configuration
 # Imaging Data Commons CT dataset
 
+vars:
+    idc_dataset: "/mnt/ssd1/ibro/IDC_SSL_CT"
+
 data:
     train_dataset:
         dataset:
-            data: "$monai.auto3dseg.datafold_read('/mnt/ssd1/ibro/IDC_SSL_CT/idc_dump_datalist.json', basedir='', key='training')[0]"
+            data: "$monai.auto3dseg.datafold_read(@vars::idc_dataset + '/idc_dump_datalist.json', basedir='', key='training')[0]"

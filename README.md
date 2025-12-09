@@ -88,6 +88,27 @@ Configs are composable - pass multiple files and they merge in order:
 lighter fit base.yaml model.yaml dataset.yaml  # Later files override earlier ones
 ```
 
+## Path Configuration
+
+Each config file defines its paths in the `vars:` section at the top for easy customization:
+
+| Config | Variable | Description |
+|--------|----------|-------------|
+| `train.yaml` | `experiments_dir` | Output directory for checkpoints and logs |
+| `dinotxt_stage.yaml` | `experiments_dir` | Output directory for checkpoints and logs |
+| `predict.yaml` | `amos_dataset` | Path to AMOS dataset |
+| `datasets/amos.yaml` | `amos_dataset` | Path to AMOS dataset |
+| `datasets/idc_dump.yaml` | `idc_dataset` | Path to IDC dataset |
+
+Override paths from the CLI:
+```bash
+lighter fit configs/train.yaml configs/models/primus.yaml configs/datasets/amos.yaml \
+    vars::experiments_dir=/your/output/path
+
+lighter fit configs/train.yaml configs/models/primus.yaml configs/datasets/idc_dump.yaml \
+    vars::idc_dataset=/your/idc/data/path
+```
+
 ## Data Preparation
 
 Create a JSON file in MONAI format:

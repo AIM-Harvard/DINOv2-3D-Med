@@ -1,6 +1,7 @@
 # DINOtxt (Image-Text Alignment) Training Configuration
 
 vars:
+    experiments_dir: "/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain"
     run_name: "DINOtxt_pretrain"
     img_size: [160, 160, 160]
     hidden_size: 864
@@ -25,10 +26,10 @@ trainer:
         _target_: pytorch_lightning.loggers.WandbLogger
         project: "dinov2"
         name: "%vars::run_name"
-        save_dir: "$'/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain/' + '%vars::run_name'"
+        save_dir: "$@vars::experiments_dir + '/' + @vars::run_name"
     callbacks:
         - _target_: pytorch_lightning.callbacks.ModelCheckpoint
-          dirpath: "$'/mnt/data1/suraj/dinov2_experiments/dinov2_pretrain/' + '%vars::run_name'"
+          dirpath: "$@vars::experiments_dir + '/' + @vars::run_name"
           filename: "dinov2_3d_fixed_{epoch:03d}"
           save_last: true
           every_n_epochs: 1
