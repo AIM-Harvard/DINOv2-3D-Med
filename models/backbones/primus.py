@@ -5,7 +5,6 @@ from torch import nn
 from timm.layers import trunc_normal_
 from einops import rearrange
 from torch.utils.checkpoint import checkpoint
-from einops import rearrange
 import numpy as np
 from dynamic_network_architectures.building_blocks.patch_encode_decode import (
     LayerNormNd,
