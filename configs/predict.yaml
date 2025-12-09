@@ -1,5 +1,8 @@
 # DINOv2 3D Prediction Configuration
 
+_imports_:
+    monai: monai
+
 vars:
     amos_dataset: "/mnt/data1/datasets/AMOS/amos22"
     num_workers: 8

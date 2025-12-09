@@ -1,3 +1,13 @@
 *.pyc
 __pycache__
 
+**/lightning_logs/
+**/checkpoints/
+.DS_Store
+.env
+.vscode/
+.idea/
+.ipynb_checkpoints/
+.venv/
+.ruff_cache/
+.claude/

@@ -1,6 +1,9 @@
 # AMOS Dataset Configuration
 # Multi-organ segmentation dataset
 
+_imports_:
+    monai: monai
+
 vars:
     amos_dataset: "/mnt/data1/datasets/AMOS/amos22"
 
