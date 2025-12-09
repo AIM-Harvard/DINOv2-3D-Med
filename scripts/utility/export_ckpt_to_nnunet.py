@@ -5,12 +5,15 @@ Converts PyTorch Lightning checkpoints to nnUNet format
 """
 
 import argparse
-import torch
-import os
 import sys
+from pathlib import Path
 from typing import Dict, Any
 
-from utils.imports import import_module_from_path
+import torch
+
+from lighter.utils.dynamic_imports import import_module_from_path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def modify_state_dict(state_dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -28,13 +31,11 @@ def modify_state_dict(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     return modified_state_dict
 
 
-def process_checkpoint(input_path: str, output_path: str, 
+def process_checkpoint(input_path: str | Path, output_path: str | Path,
                       remove_cls_token: bool = True,
-                      arch_class_name: str = 'PrimusM') -> None:
+                      arch_class_name: str = 'PrimusM',
+                      project_path: Path = PROJECT_ROOT) -> None:
     """Process checkpoint file and save in nnUNet format"""
-    
-    # Import project module to handle checkpoint dependencies
-    project_path = "/home/suraj/Repositories/DINOv2_3D"
     import_module_from_path("project", project_path)
     
     print(f"Loading checkpoint from: {input_path}")
@@ -86,21 +87,27 @@ def main():
                        help="Architecture class name (default: PrimusM)")
     parser.add_argument("--keep-cls-token", action="store_true",
                        help="Keep CLS token in positional embeddings")
-    
+    parser.add_argument("--project-path", type=Path, default=PROJECT_ROOT,
+                       help=f"Path to project root (default: {PROJECT_ROOT})")
+
     args = parser.parse_args()
-    
-    if not os.path.exists(args.input_path):
-        print(f"Error: Input file {args.input_path} does not exist")
+
+    input_path = Path(args.input_path)
+    output_path = Path(args.output_path)
+
+    if not input_path.exists():
+        print(f"Error: Input file {input_path} does not exist")
         sys.exit(1)
-    
-    os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     
     try:
         process_checkpoint(
-            input_path=args.input_path,
-            output_path=args.output_path,
+            input_path=input_path,
+            output_path=output_path,
             remove_cls_token=not args.keep_cls_token,
-            arch_class_name=args.arch_class_name
+            arch_class_name=args.arch_class_name,
+            project_path=args.project_path,
         )
         print("Checkpoint conversion completed successfully!")
     except Exception as e:
