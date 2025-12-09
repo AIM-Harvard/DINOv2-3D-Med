@@ -1,76 +1,149 @@
 # DINOv2-3D: Self-Supervised 3D Vision Transformer Pretraining
 
-A configuration-first (and therefore easily understandable and trackable) repository for a 3D implementation od DINOv2. Based on the implementations from Lightly (Thank you!) and integrated with Pytorch Lightning. 3D capabilities of this implementation are largely through MONAI's functionalities
+A configuration-driven repository for 3D DINOv2 self-supervised learning. Built with [Lighter](https://github.com/project-lighter/lighter), PyTorch Lightning, and MONAI.
 
-## What you can do with this Repo
-- Train your own 3D Dinov2 on CT, MRI, PET data, etc. with very little configuration other than whats been provided. 
-- Use state of the art PRIMUS transformer in medical segmentation to pretrain your DINOV2
-- Make a baseline for DinoV2 to improve and build on.
-- Change elements of the framework through modular extensions. 
+## What You Can Do with This Repo
+- Train your own 3D DINOv2 on CT, MRI, PET data, etc. with minimal configuration
+- Use state-of-the-art PRIMUS transformer for medical imaging pretraining
+- Make a baseline for DINOv2 to improve and build on
+- Change elements of the framework through modular extensions
 
 ## Features
 - DINOv2-style self-supervised learning with teacher-student models
-- Block masking for 3D volumes 
+- Block masking for 3D volumes
 - Flexible 3D augmentations (global/local views) courtesy of MONAI
-- PyTorch Lightning training loop 
-- YAML-based experiment configuration that is explainable at a glance due to its abstraction!
-
+- PyTorch Lightning training loop
+- YAML-based experiment configuration powered by Lighter
 
 ## Installation
+
 1. Clone the repository:
    ```bash
    git clone https://github.com/AIM-Harvard/DINOv2-3D-Med.git
-   cd DINOv2_3D
+   cd DINOv2-3D-Med
    ```
-2. Create a virtual environment with UV(recommended):
+
+2. Create a virtual environment with UV (recommended):
    ```bash
    uv venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
+
 3. Install dependencies:
    ```bash
    uv sync
    ```
 
-If you do not want to use uv, you could just as easily do a `pip install -e .` in the repo directory
+If you do not want to use uv, you can use `pip install -e .` instead.
 
 ## Usage
+
 ### Training
-Run the training script with the default training config:
+
+Run training with the default configuration:
 ```bash
-python -m scripts.run fit --config_file=./configs/train.yaml,./configs/models/primus.yaml,./configs/datasets/amos.yaml
+lighter fit configs/train.yaml configs/models/primus.yaml configs/datasets/amos.yaml
 ```
 
-Here the train.yaml contains most of the heart of the configuration. primus.yaml provides the backbone to use for DINOv2 and amos.yaml provides the path to the dataset to be used.
+Override parameters directly from the CLI:
+```bash
+lighter fit configs/train.yaml configs/models/primus.yaml configs/datasets/amos.yaml \
+  trainer::max_epochs=50 \
+  model::base_lr=0.0005 \
+  data::batch_size=4
+```
 
+### Prediction
+
+```bash
+lighter predict configs/predict.yaml
+```
 
 ### Configuration
-- All experiment settings (model, trainer, data) are defined in YAML configs.
-- `configs/train.yaml`: Main training configuration with complete setup
-- `configs/predict.yaml`: Configuration for inference/prediction tasks
+
+Lighter uses YAML configs with powerful features:
+
+- **Variable references**: `%vars::hidden_size` - reference shared variables
+- **Cross-section references**: `%trainer::max_epochs` - reference other config sections
+- **Python expressions**: `$int(%trainer::max_epochs * 0.03)` - compute values dynamically
+- **Object instantiation**: `_target_: module.ClassName` - create objects from config
+
+#### Config Structure
+
+```
+configs/
+├── train.yaml           # Main training configuration
+├── predict.yaml         # Inference configuration
+├── dinotxt_stage.yaml   # Image-text alignment training
+├── models/
+│   ├── primus.yaml      # PRIMUS backbone
+│   └── vit.yaml         # MONAI ViT backbone
+└── datasets/
+    ├── amos.yaml        # AMOS dataset
+    └── idc_dump.yaml    # IDC dataset
+```
+
+Configs are composable - pass multiple files and they merge in order:
+```bash
+lighter fit base.yaml model.yaml dataset.yaml  # Later files override earlier ones
+```
 
 ## Data Preparation
 
-For now, to run a straightforward DINOv2 pipeline, all you need to do is setup your data paths in a JSON in the MONAI format. 
-
-It looks something like this
+Create a JSON file in MONAI format:
 
 ```json
 {
    "training": [
-      {"image": <path_to_image>},
-      ....
+      {"image": "/path/to/image1.nii.gz"},
+      {"image": "/path/to/image2.nii.gz"}
    ]
 }
 ```
-If you'd like to do more complex manipulations like sample based on a mask and so on, you can easily extend this json to include a "label" in addition to the image and use MONAI transforms to sample as you like.
+
+If you need more complex data loading (e.g., with labels for sampling), extend the JSON:
+
+```json
+{
+   "training": [
+      {"image": "/path/to/image.nii.gz", "label": "/path/to/label.nii.gz"}
+   ]
+}
+```
+
+Then update your dataset config or override from CLI:
+```bash
+lighter fit configs/train.yaml \
+  "data::train_dataset::dataset::data=\$monai.auto3dseg.datafold_read('/path/to/dataset.json', basedir='/path/to/data', key='training')[0]"
+```
+
+## Project Structure
+
+```
+DINOv2-3D-Med/
+├── __lighter__.py           # Lighter marker (enables project.* imports)
+├── configs/                 # YAML configurations
+├── models/                  # Model architectures
+│   ├── meta_arch.py         # DINOv2 teacher-student architecture
+│   └── backbones/           # PRIMUS, ViT, EVA backbones
+├── training/                # Lightning modules
+│   ├── dinov2_lightning_module.py
+│   ├── dinotxt_lightning_module.py
+│   └── data_module.py
+├── transforms/              # Data augmentations
+│   ├── dinov2_aug.py        # DINOv2 3D augmentations
+│   └── blockmask.py         # Block masking for iBOT
+├── losses/                  # Loss functions
+│   └── dino.py              # DINOv2 + iBOT + KoLeo losses
+└── utils/                   # Utilities
+```
 
 ## References
+- [Lighter](https://github.com/project-lighter/lighter)
 - [Lightly](https://github.com/lightly-ai/lightly)
 - [DINOv2 (Facebook Research)](https://github.com/facebookresearch/dinov2)
 - [MONAI (Medical Open Network for AI)](https://github.com/Project-MONAI/MONAI)
 - [PyTorch Lightning](https://www.pytorchlightning.ai/)
-
 
 ## License
 Copyright &copy; 2025 Suraj Pai, Vasco Prudente

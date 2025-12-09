@@ -10,7 +10,7 @@ from torch import nn
 from lightly.models.modules import DINOProjectionHead
 from lightly.utils.scheduler import cosine_schedule
 from lightly.models.utils import update_momentum
-from transforms.blockmask import RandomBlockMask3D
+from project.transforms.blockmask import RandomBlockMask3D
 
 # References:
 # Thanks to the following repositories that provided the structure and necessary components for this implementation:

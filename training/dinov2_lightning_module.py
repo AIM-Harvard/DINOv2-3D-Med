@@ -23,8 +23,8 @@ from lightly.utils.scheduler import (
     cosine_schedule,
 )
 
-from models.meta_arch import DINOv2_3D_Meta_Architecture
-from losses.dino import DINOv2Loss
+from project.models.meta_arch import DINOv2_3D_Meta_Architecture
+from project.losses.dino import DINOv2Loss
 
 
 class DINOv2_3D_LightningModule(LightningModule):

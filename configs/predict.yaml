@@ -1,82 +1,85 @@
-project: /home/suraj/Repositories/DINOv2_3D
-num_workers: 8
+# DINOv2 3D Prediction Configuration
+
+vars:
+  num_workers: 8
+  img_size: [160, 160, 160]
 
 trainer:
-    _target_: pytorch_lightning.Trainer
-    benchmark: True
-    max_epochs: 100
-    check_val_every_n_epoch: 4
-    accelerator: gpu
-    precision: 16-mixed
-    devices: 1
-    log_every_n_steps: 50
-    logger: 
-        _target_: pytorch_lightning.loggers.CSVLogger
-        save_dir: "./logs"
-        name: "get_predictions"
-    callbacks:
-      - _target_: project.callbacks.prediction_saver.SavePredictions
-        path: /home/suraj/Repositories/DINOv2_3D/predictions.csv
+  _target_: pytorch_lightning.Trainer
+  benchmark: true
+  max_epochs: 100
+  check_val_every_n_epoch: 4
+  accelerator: gpu
+  precision: 16-mixed
+  devices: 1
+  log_every_n_steps: 50
+  logger:
+    _target_: pytorch_lightning.loggers.CSVLogger
+    save_dir: "./logs"
+    name: "get_predictions"
+  callbacks:
+    - _target_: project.callbacks.prediction_saver.SavePredictions
+      path: ./predictions.csv
 
-lightning_module:
-    _target_: project.models.DINOv2_3D_LightningModule
-    batch_size_per_device: 4
-    hidden_size: 768
-    ibot_separate_head: True
-    base_lr: 0.00001
-    layer_decay: 0.9
-    gradient_clip_val: 3.0
-    teacher_temp_warmup_epochs: 30
-    teacher_temp_min: 0.005
-    teacher_temp_max: 0.005
-    freeze_last_layer_epochs: 1
-    projection_dim: 16384
-    weight_decay: 0.04
-    backbone:
+model:
+  _target_: project.training.DINOv2_3D_LightningModule
+  batch_size_per_device: 4
+  hidden_size: 768
+  ibot_separate_head: true
+  base_lr: 0.00001
+  layer_decay: 0.9
+  gradient_clip_val: 3.0
+  teacher_temp_warmup_epochs: 30
+  teacher_temp_min: 0.005
+  teacher_temp_max: 0.005
+  freeze_last_layer_epochs: 1
+  projection_dim: 16384
+  weight_decay: 0.04
+  backbone:
 
-  datasets:
-    train: null
-    predict:
-        _target_: monai.data.Dataset
-        data: "$monai.auto3dseg.datafold_read('/mnt/data1/datasets/AMOS/amos22/dataset.json', basedir='/mnt/data1/datasets/AMOS/amos22', key='validation')[0]"
-        transform:
-            _target_: torchvision.transforms.Compose
-            transforms:
-              - _target_: monai.transforms.LoadImaged
-                keys: ["image"]
-                image_only: True
-              - _target_: monai.transforms.EnsureChannelFirstd
-                keys: ["image"]
-              - _target_: monai.transforms.Orientationd
-                keys: ["image"]
-                axcodes: SPL
-                lazy: True
-              - _target_: monai.transforms.Spacingd
-                keys: ["image"]
-                pixdim: [1.0, 1.0, 1.0]
-                mode: bilinear
-                lazy: True
-              - _target_: monai.transforms.CropForegroundd
-                keys: ["image"]
-                source_key: "image"
-                lazy: True
-              - _target_: monai.transforms.SpatialPadd
-                keys: ["image"]
-                spatial_size: "%system#model#img_size"
-                value: -1024
-                lazy: True
-              - _target_: monai.transforms.ScaleIntensityRange
-                keys: ["image"]
-                a_min: -1024
-                a_max: 2048
-                b_min: 0
-                b_max: 1
-                clip: True
-              - _target_: monai.transforms.CenterSpatialCrop
-                keys: ["image"]
-                roi_size: "%system#model#img_size"
-              - _target_: torchvision.transforms.Lambda
-                lambd: "$lambda x: (x['image'].as_tensor(), False)"
-
-    val: null
-    test: null 
+data:
+  _target_: project.training.DataModule
+  num_workers: "%vars::num_workers"
+  batch_size: 1
+  pin_memory: true
+  predict_dataset:
+    _target_: monai.data.Dataset
+    data: "$monai.auto3dseg.datafold_read('/mnt/data1/datasets/AMOS/amos22/dataset.json', basedir='/mnt/data1/datasets/AMOS/amos22', key='validation')[0]"
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: monai.transforms.LoadImaged
+          keys: ["image"]
+          image_only: true
+        - _target_: monai.transforms.EnsureChannelFirstd
+          keys: ["image"]
+        - _target_: monai.transforms.Orientationd
+          keys: ["image"]
+          axcodes: SPL
+          lazy: true
+        - _target_: monai.transforms.Spacingd
+          keys: ["image"]
+          pixdim: [1.0, 1.0, 1.0]
+          mode: bilinear
+          lazy: true
+        - _target_: monai.transforms.CropForegroundd
+          keys: ["image"]
+          source_key: "image"
+          lazy: true
+        - _target_: monai.transforms.SpatialPadd
+          keys: ["image"]
+          spatial_size: "%vars::img_size"
+          value: -1024
+          lazy: true
+        - _target_: monai.transforms.ScaleIntensityRanged
+          keys: ["image"]
+          a_min: -1024
+          a_max: 2048
+          b_min: 0
+          b_max: 1
+          clip: true
+        - _target_: monai.transforms.CenterSpatialCropd
+          keys: ["image"]
+          roi_size: "%vars::img_size"
+        - _target_: torchvision.transforms.Lambda
+          lambd: "$lambda x: (x['image'].as_tensor(), False)"

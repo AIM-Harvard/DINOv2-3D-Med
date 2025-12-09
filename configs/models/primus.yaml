@@ -1,15 +1,19 @@
-lightning_module#backbone:      
-  _target_: project.models.backbones.Primus
-  embed_dim: "%hidden_size"
-  eva_depth: 16
-  eva_numheads: 12
-  input_channels: 1
-  num_classes: 1
-  input_shape: "%img_size"
-  patch_embed_size: "%patch_size"
-  patch_drop_rate: 0.0
-  drop_path_rate: 0.2
-  attn_drop_rate: 0
-  classification: True
-  init_values: 0.1
-  scale_attn_inner: True
+# PRIMUS Backbone Configuration
+# High-performance medical imaging transformer
+
+model:
+  backbone:
+    _target_: project.models.backbones.primus.Primus
+    embed_dim: "%vars::hidden_size"
+    eva_depth: 16
+    eva_numheads: 12
+    input_channels: 1
+    num_classes: 1
+    input_shape: "%vars::img_size"
+    patch_embed_size: "%vars::patch_size"
+    patch_drop_rate: 0.0
+    drop_path_rate: 0.2
+    attn_drop_rate: 0
+    classification: true
+    init_values: 0.1
+    scale_attn_inner: true

@@ -23,8 +23,8 @@ from lightly.utils.scheduler import (
     cosine_schedule,
 )
 
-from models.multimodal_meta_arch import DINOtxtMetaArchitecture
-from losses.image_text_alignment import ImageTextAlignmentLoss
+from project.models.multimodal_meta_arch import DINOtxtMetaArchitecture
+from project.losses.image_text_alignment import ImageTextAlignmentLoss
 
 
 class DINOtxt_LightningModule(LightningModule):
