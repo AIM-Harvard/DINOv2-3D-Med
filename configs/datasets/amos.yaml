@@ -2,6 +2,6 @@
 # Multi-organ segmentation dataset
 
 data:
-  train_dataset:
-    dataset:
-      data: "$monai.auto3dseg.datafold_read('/mnt/data1/datasets/AMOS/amos22/dataset.json', basedir='/mnt/data1/datasets/AMOS/amos22', key='training')[0]"
+    train_dataset:
+        dataset:
+            data: "$monai.auto3dseg.datafold_read('/mnt/data1/datasets/AMOS/amos22/dataset.json', basedir='/mnt/data1/datasets/AMOS/amos22', key='training')[0]"
