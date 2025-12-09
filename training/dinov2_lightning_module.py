@@ -5,26 +5,22 @@ Handles optimizer, scheduler, training/validation steps, and teacher-student upd
 
 from __future__ import annotations
 
-import copy
 import math
 import re
-from functools import partial
-from typing import Any
 import torch
 from torch import nn
 from pytorch_lightning import LightningModule
 from torch import Tensor
 from torch.optim import AdamW, Optimizer
 
-from lightly.utils.benchmarking import OnlineLinearClassifier
 from lightly.utils.optim import update_param_groups
 from lightly.utils.scheduler import (
     CosineWarmupScheduler,
     cosine_schedule,
 )
 
-from models.meta_arch import DINOv2_3D_Meta_Architecture
-from losses.dino import DINOv2Loss
+from project.models.meta_arch import DINOv2_3D_Meta_Architecture
+from project.losses.dino import DINOv2Loss
 
 
 class DINOv2_3D_LightningModule(LightningModule):
@@ -87,11 +83,6 @@ class DINOv2_3D_LightningModule(LightningModule):
             ibot_loss_weight=1.0,
             koleo_loss_weight=0.1,
         )
-
-        # self.online_classifier = OnlineLinearClassifier(
-        #     feature_dim=768,
-        #     num_classes=num_classes,
-        # )
 
     def predict_step(
         self, batch: tuple[list[Tensor], Tensor, list[str]], batch_idx: int

@@ -23,8 +23,8 @@ from lightly.utils.scheduler import (
     cosine_schedule,
 )
 
-from models.multimodal_meta_arch import DINOtxtMetaArchitecture
-from losses.image_text_alignment import ImageTextAlignmentLoss
+from project.models.multimodal_meta_arch import DINOtxtMetaArchitecture
+from project.losses.image_text_alignment import ImageTextAlignmentLoss
 
 
 class DINOtxt_LightningModule(LightningModule):
@@ -73,7 +73,6 @@ class DINOtxt_LightningModule(LightningModule):
         self.criterion = criterion or ImageTextAlignmentLoss(
             learnable_temperature=learnable_temperature,
         )
-
 
     def predict_step(
         self, batch: tuple[list[Tensor], Tensor, list[str]], batch_idx: int

@@ -5,7 +5,6 @@ from torch import nn
 from timm.layers import trunc_normal_
 from einops import rearrange
 from torch.utils.checkpoint import checkpoint
-from einops import rearrange
 import numpy as np
 from dynamic_network_architectures.building_blocks.patch_encode_decode import (
     LayerNormNd,
@@ -48,7 +47,9 @@ class Primus(nn.Module):
         ref_feat_shape = tuple(
             [i // ds for i, ds in zip(input_shape, patch_embed_size)]
         )
-        self.down_projection = DynamicPatchEmbed(patch_embed_size, input_channels, embed_dim)
+        self.down_projection = DynamicPatchEmbed(
+            patch_embed_size, input_channels, embed_dim
+        )
         self.up_projection = PatchDecode(
             patch_embed_size,
             embed_dim,
@@ -112,7 +113,7 @@ class Primus(nn.Module):
         # Apply masking if provided
         if mask is not None:
             actual_sequence_length = x.shape[1]
-            mask = mask[:, 1: actual_sequence_length + 1]
+            mask = mask[:, 1 : actual_sequence_length + 1]
             # Apply mask tokens
             mask_tokens = self.mask_token.expand(B, actual_sequence_length - 1, -1)
             w = mask[:, 1:].unsqueeze(-1).type_as(mask_tokens)
@@ -141,7 +142,5 @@ class Primus(nn.Module):
             end_idx = start_idx + num_reg_tokens
             # Remove register tokens from x
             x = torch.cat((x[:, :start_idx, :], x[:, end_idx:, :]), dim=1)
-        
+
         return x
-
-

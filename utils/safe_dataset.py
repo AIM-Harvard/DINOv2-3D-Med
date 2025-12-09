@@ -1,6 +1,7 @@
 import traceback
 from torch.utils.data import Dataset
 
+
 class SafeDataset(Dataset):
     """
     A wrapper around a Dataset that patches the __getitem__ method to catch exceptions
@@ -33,27 +34,34 @@ class SafeDataset(Dataset):
         max_retries = 10  # Prevent infinite loops
         attempted_indices = set()
         current_index = index
-        
+
         for retry in range(max_retries):
             # Avoid trying the same index twice
             if current_index in attempted_indices:
                 # Find a new index we haven't tried yet
                 import random
+
                 current_index = random.randint(0, len(self.dataset) - 1)
                 continue
-                
+
             attempted_indices.add(current_index)
-            
+
             try:
                 item = self.dataset[current_index]
-                
+
                 # Log if we had to use an alternative sample
                 if current_index != index:
-                    print(f"Successfully loaded alternative sample at index {current_index} (original index {index} was corrupted)")
-                
+                    print(
+                        f"Successfully loaded alternative sample at index {current_index} (original index {index} was corrupted)"
+                    )
+
                 return item
             except Exception as e:
-                print(f"Error at index {current_index}, trying another sample. \nException: {e}\n{traceback.format_exc()}")
-        
+                print(
+                    f"Error at index {current_index}, trying another sample. \nException: {e}\n{traceback.format_exc()}"
+                )
+
         # If we've exhausted retries, raise an exception
-        raise RuntimeError(f"Failed to load any sample after {max_retries} attempts starting from index {index}")
+        raise RuntimeError(
+            f"Failed to load any sample after {max_retries} attempts starting from index {index}"
+        )

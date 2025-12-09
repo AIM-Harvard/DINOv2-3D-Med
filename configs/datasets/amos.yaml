@@ -1,1 +1,13 @@
-data_module#train_dataset#data: "$monai.auto3dseg.datafold_read('/mnt/data1/datasets/AMOS/amos22/dataset.json', basedir='/mnt/data1/datasets/AMOS/amos22', key='training')[0]"
+# AMOS Dataset Configuration
+# Multi-organ segmentation dataset
+
+_imports_:
+    monai: monai
+
+vars:
+    amos_dataset: "/mnt/data1/datasets/AMOS/amos22"
+
+data:
+    train_dataset:
+        dataset:
+            data: "$monai.auto3dseg.datafold_read(@vars::amos_dataset + '/dataset.json', basedir=@vars::amos_dataset, key='training')[0]"

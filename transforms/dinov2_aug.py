@@ -7,7 +7,6 @@ from typing import List, Optional, Union, Tuple
 import torch
 from torchvision.transforms import Compose
 from monai.transforms import (
-    EnsureChannelFirst,
     RandAffine,
     RandHistogramShift,
     RandGaussianSmooth,
@@ -15,8 +14,7 @@ from monai.transforms import (
 )
 from .random_resized_crop import RandomResizedCrop3D
 from copy import deepcopy
-import torch
-import torch.nn as nn
+from torch import nn
 
 
 class DINOv2Augmentation3D(nn.Module):

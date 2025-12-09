@@ -67,7 +67,9 @@ class Eva(nn.Module):
         if rope_kwargs is None:
             rope_kwargs = {}
 
-        self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
+        self.num_features = self.embed_dim = (
+            embed_dim  # num_features for consistency with other models
+        )
         self.dynamic_img_size = dynamic_img_size
         self.ref_feat_shape = ref_feat_shape
         self.grad_checkpointing = False
@@ -77,7 +79,11 @@ class Eva(nn.Module):
         num_patches = np.prod(ref_feat_shape)
 
         self.pos_embed = (
-            nn.Parameter(torch.zeros(1, num_patches + self.num_prefix_tokens, embed_dim)) if use_abs_pos_emb else None
+            nn.Parameter(
+                torch.zeros(1, num_patches + self.num_prefix_tokens, embed_dim)
+            )
+            if use_abs_pos_emb
+            else None
         )
         self.pos_drop = nn.Dropout(p=pos_drop_rate)
         if patch_drop_rate > 0:
@@ -98,7 +104,9 @@ class Eva(nn.Module):
         else:
             self.rope = None
 
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
+        dpr = [
+            x.item() for x in torch.linspace(0, drop_path_rate, depth)
+        ]  # stochastic depth decay rule
         block_fn = block_fn
         self.blocks = nn.ModuleList(
             [
@@ -161,10 +169,14 @@ class Eva(nn.Module):
         )
         return matcher
 
-    def _pos_embed(self, x, spatial_size=None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def _pos_embed(
+        self, x, spatial_size=None
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if self.dynamic_img_size:
-            raise NotImplementedError("dynamic_img_size is not implemented at the moment")
-        
+            raise NotImplementedError(
+                "dynamic_img_size is not implemented at the moment"
+            )
+
         pos_embed = self.pos_embed
         if spatial_size is not None:
             D, H, W = spatial_size
@@ -178,17 +190,23 @@ class Eva(nn.Module):
                 sin, cos = self.rope(D=D, H=H, W=W)
                 rot_pos_embed = torch.cat([cos, sin], dim=-1)
             else:
-                rot_pos_embed = self.rope.get_embed() if hasattr(self.rope, 'get_embed') else None
+                rot_pos_embed = (
+                    self.rope.get_embed() if hasattr(self.rope, "get_embed") else None
+                )
         else:
             rot_pos_embed = None
 
         if pos_embed is not None:
-            if spatial_size is not None and self.ref_feat_shape is not None and (D, H, W) != self.ref_feat_shape:
+            if (
+                spatial_size is not None
+                and self.ref_feat_shape is not None
+                and (D, H, W) != self.ref_feat_shape
+            ):
                 pos_embed = resample_abs_pos_embed(
                     pos_embed,
                     (D, H, W),
                     self.ref_feat_shape,
-                    num_prefix_tokens=self.num_prefix_tokens
+                    num_prefix_tokens=self.num_prefix_tokens,
                 )
             x = x + pos_embed
         x = self.pos_drop(x)
