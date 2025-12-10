@@ -20,7 +20,7 @@ trainer:
   devices: 4
   detect_anomaly: False
   sync_batchnorm: True
-  accumulate_grad_batches: 2   # gradient accumulation for larger effective batch, less GPU RAM
+  accumulate_grad_batches: 16   # gradient accumulation for larger effective batch, less GPU RAM
   logger:
     _target_: pytorch_lightning.loggers.WandbLogger
     project: "dinov2"
@@ -42,9 +42,9 @@ lightning_module:
     base_lr: 0.0001
     layer_decay: 0.9
     gradient_clip_val: 3.0
-    teacher_temp_warmup_epochs: "$int(@trainer#max_epochs * 0.03)"
-    teacher_temp_min: 0.01
-    teacher_temp_max: 0.03
+    teacher_temp_warmup_epochs: "$int(@trainer#max_epochs * 0.3)"
+    teacher_temp_min: 0.04
+    teacher_temp_max: 0.07
     freeze_last_layer_epochs: 1
     projection_dim: 65536  # reduced projection dim (was 131072), less memory
     weight_decay: 0.04
@@ -99,7 +99,7 @@ data_module:
               global_view_scale: [0.3, 1.0]
               global_view_size: "$@img_size[0]"
               local_view_scale: [0.3, 1.0]
-              local_view_size: "$@img_size[0]//2"
-              num_local_views: 2
+              local_view_size: "$@img_size[0]//4"
+              num_local_views: 8
             - _target_: torchvision.transforms.Lambda
               lambd: "$lambda x: (x, False)" # Incase you need labels.

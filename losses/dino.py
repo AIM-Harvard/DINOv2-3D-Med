@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 from lightly.loss import DINOLoss, IBOTPatchLoss, KoLeoLoss
-from lightly.models.modules.center import Center
 from lightly.utils.scheduler import linear_warmup_schedule
 
 

@@ -183,7 +183,6 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
         sequence_length = self.student_backbone.sequence_length
         mask = global_views.new_zeros((B, sequence_length), dtype=torch.bool)
         H, W, D = self.student_backbone.grid_size
-        assert H == W == D, "Patch size must be cubic for 3D input"
         assert H * W * D == sequence_length - 1, (
             f"Unexpected grid size {H * W * D} ({H}, {W}, {D}) does not match sequence length {sequence_length - 1}"
         )
