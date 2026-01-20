@@ -46,7 +46,7 @@ class DINOv2_3D_LightningModule(LightningModule):
         teacher_temp_warmup_epochs: int = 30,
         teacher_temp_min: float = 0.04,
         teacher_temp_max: float = 0.07,
-        freeze_last_layer_epochs: int = 1,
+        freeze_last_layer_epochs: int = 0,
         projection_dim: int = 65536,
         backbone: nn.Module = None,
         criterion: nn.Module = None,

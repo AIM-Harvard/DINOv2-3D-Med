@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-from lightly.loss import DINOLoss, IBOTPatchLoss, KoLeoLoss
+from lightly.loss import DINOLoss, KoLeoLoss
 from lightly.utils.scheduler import linear_warmup_schedule
+from .ibot_patch_3d import IBOTPatchLoss3D
 
 
 # References:
@@ -45,7 +46,7 @@ class DINOv2Loss(nn.Module):
         )
 
         self.ibot_loss_fn = (
-            IBOTPatchLoss(
+            IBOTPatchLoss3D(
                 output_dim=self.output_dim,
                 teacher_temp=self.teacher_temp_min,  # Will be updated dynamically
                 student_temp=self.student_temp,
@@ -93,6 +94,19 @@ class DINOv2Loss(nn.Module):
         mask = input_dict.get("mask", None)
         n_local_views = input_dict.get("n_local_views", 0)
 
+        if mask is not None:
+            # Flatten any spatial mask to patch grid [B, num_patches]
+            if mask.dim() > 2:
+                mask = mask.flatten(start_dim=1)
+            if teacher_patches is not None and teacher_patches.shape[:2] != mask.shape:
+                raise ValueError(
+                    f"Teacher patch shape {teacher_patches.shape[:2]} does not match mask shape {mask.shape}"
+                )
+            if student_patches is not None and student_patches.shape[:2] != mask.shape:
+                raise ValueError(
+                    f"Student patch shape {student_patches.shape[:2]} does not match mask shape {mask.shape}"
+                )
+
         if student_outputs is None or teacher_outputs is None:
             raise ValueError(
                 "Both student_outputs and teacher_outputs must be provided."
@@ -119,16 +133,20 @@ class DINOv2Loss(nn.Module):
         )
 
         # Patch-level iBOT loss
-        ibot_loss = (
-            self.ibot_loss_fn(
+        if self.ibot_loss_fn is not None:
+            if teacher_patches is None or student_patches is None or mask is None:
+                raise ValueError(
+                    "iBOT loss requires teacher_patch_tokens, student_patch_tokens, and mask."
+                )
+
+            ibot_loss = self.ibot_loss_fn(
                 teacher_out=teacher_patches,
                 student_out=student_patches,
                 mask=mask,
                 teacher_temp=teacher_temp,
             )
-            if self.ibot_loss_fn is not None
-            else 0
-        )
+        else:
+            ibot_loss = 0
 
         # Koleo loss - only on global views
         koleo_loss = (

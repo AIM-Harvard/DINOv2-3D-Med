@@ -130,17 +130,19 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
             self.teacher_ibot_head = self.teacher_dino_head
             self.student_ibot_head = self.student_dino_head
 
-    def forward_teacher(self, x, mask=None):
+    def forward_teacher(self, x):
+        """Forward pass for the EMA (teacher) backbone without masking."""
         features = self.teacher_backbone(x)
         cls_token = features[:, 0]
-        features = features if mask is None else features[mask]
-        return cls_token, features
+        patch_tokens = features[:, 1:] if features.shape[1] > 1 else features
+        return cls_token, patch_tokens
 
     def forward_student(self, x, mask=None):
+        """Forward pass for the student backbone, keeping patch grid structure."""
         features = self.student_backbone(x, mask=mask)
         cls_tokens = features[:, 0]
-        features = features if mask is None else features[mask]
-        return cls_tokens, features
+        patch_tokens = features[:, 1:] if features.shape[1] > 1 else features
+        return cls_tokens, patch_tokens
 
     def update_teacher(self, global_step: int, max_steps: int) -> None:
         """Update teacher using EMA with cosine momentum schedule."""
@@ -181,21 +183,27 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
         # Masking
         B = len(global_views)
         sequence_length = self.student_backbone.sequence_length
-        mask = global_views.new_zeros((B, sequence_length), dtype=torch.bool)
-        H, W, D = self.student_backbone.grid_size
-        assert H * W * D == sequence_length - 1, (
-            f"Unexpected grid size {H * W * D} ({H}, {W}, {D}) does not match sequence length {sequence_length - 1}"
-        )
+        D, H, W = self.student_backbone.grid_size
+        has_cls_token = getattr(self.student_backbone, "cls_token", None) is not None
+        num_patches = sequence_length - (1 if has_cls_token else 0)
+        assert (
+            D * H * W == num_patches
+        ), f"Grid size {D * H * W} ({D}, {H}, {W}) does not match patch count {num_patches}"
 
         block_masker = RandomBlockMask3D(max_block_size=3)
         block_mask = block_masker(size=(B, D, H, W), device=device)
-        mask[:, 1:] = block_mask.flatten(start_dim=1)
+        patch_mask = block_mask.flatten(start_dim=1)
+        if has_cls_token:
+            mask = torch.zeros(
+                (B, sequence_length), device=device, dtype=torch.bool
+            )
+            mask[:, 1:] = patch_mask
+        else:
+            mask = patch_mask
 
         # Teacher forward
         with torch.no_grad():
-            teacher_cls_token, teacher_patch_tokens = self.forward_teacher(
-                global_views, mask=mask
-            )
+            teacher_cls_token, teacher_patch_tokens = self.forward_teacher(global_views)
             teacher_cls_token = self.teacher_dino_head(teacher_cls_token)
             teacher_patch_tokens = self.teacher_ibot_head(teacher_patch_tokens)
 
@@ -224,7 +232,7 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
             "teacher_patch_tokens": teacher_patch_tokens,
             "student_patch_tokens": student_global_patch_tokens,
             "student_glob_cls_token": student_global_cls_token,
-            "mask": block_mask,
+            "mask": patch_mask,
             "n_local_views": torch.tensor(len(views) - 2, device=device),
         }
 

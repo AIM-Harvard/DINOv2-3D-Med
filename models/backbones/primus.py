@@ -112,12 +112,18 @@ class Primus(nn.Module):
         # Apply masking if provided
         if mask is not None:
             actual_sequence_length = x.shape[1]
-            mask = mask[:, 1: actual_sequence_length + 1]
-            # Apply mask tokens
-            mask_tokens = self.mask_token.expand(B, actual_sequence_length - 1, -1)
-            w = mask[:, 1:].unsqueeze(-1).type_as(mask_tokens)
-            x = x.clone()
-            x[:, 1:] = x[:, 1:] * (1 - w) + mask_tokens * w
+            if mask.shape[1] == actual_sequence_length + 1:
+                # Mask includes a leading CLS slot; drop it.
+                mask = mask[:, 1:]
+            elif mask.shape[1] != actual_sequence_length:
+                raise ValueError(
+                    f"Mask shape mismatch: expected {actual_sequence_length} patch entries, got {mask.shape[1]}"
+                )
+
+            mask = mask.to(dtype=torch.bool)
+            mask_tokens = self.mask_token.expand(B, actual_sequence_length, -1)
+            w = mask.unsqueeze(-1).type_as(mask_tokens)
+            x = x * (1 - w) + mask_tokens * w
 
         if self.register_tokens is not None:
             x = torch.cat(
@@ -143,5 +149,4 @@ class Primus(nn.Module):
             x = torch.cat((x[:, :start_idx, :], x[:, end_idx:, :]), dim=1)
         
         return x
-
 
