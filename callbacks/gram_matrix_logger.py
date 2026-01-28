@@ -52,41 +52,46 @@ class GramMatrixCallback(Callback):
         
         Computes and logs the gram matrix of features if conditions are met.
         """
-        # Only log at specified intervals
-        if trainer.global_step % self.log_every_n_steps != 0:
+        # Only log at specified intervals (skip step 0)
+        if trainer.global_step == 0 or trainer.global_step % self.log_every_n_steps != 0:
             return
         
         # Get the last batch outputs from the model
         # We need to do a forward pass to get features
-        with torch.no_grad():
-            views = batch[0]
-            model_outputs = pl_module.model(views)
-            features = model_outputs["pred"].get(self.feature_key, None)
-            
-            if features is None:
-                return
-            
-            # Normalize features
-            features_normalized = F.normalize(features, dim=-1, p=2)
-            
-            # Gather features across all DDP ranks
-            if trainer.world_size > 1:
-                # Gather from all ranks
-                gathered_features = [
-                    torch.zeros_like(features_normalized) 
-                    for _ in range(trainer.world_size)
-                ]
-                torch.distributed.all_gather(gathered_features, features_normalized)
-                features_normalized = torch.cat(gathered_features, dim=0)
-            
-            # Compute gram matrix (similarity matrix)
-            # Shape: [batch_size, batch_size]
-            gram_matrix = torch.matmul(
-                features_normalized, features_normalized.T
-            )
-            
-            # Log to wandb (only on rank 0)
-            self._log_gram_matrix(trainer, gram_matrix)
+        try:
+            with torch.no_grad():
+                views = batch[0]
+                model_outputs = pl_module.model(views)
+                features = model_outputs["pred"].get(self.feature_key, None)
+                
+                if features is None:
+                    return
+                
+                # Normalize features
+                features_normalized = F.normalize(features, dim=-1, p=2)
+                
+                # Gather features across all DDP ranks
+                if trainer.world_size > 1:
+                    # Gather from all ranks
+                    gathered_features = [
+                        torch.zeros_like(features_normalized) 
+                        for _ in range(trainer.world_size)
+                    ]
+                    torch.distributed.all_gather(gathered_features, features_normalized)
+                    features_normalized = torch.cat(gathered_features, dim=0)
+                
+                # Compute gram matrix (similarity matrix)
+                # Shape: [batch_size, batch_size]
+                gram_matrix = torch.matmul(
+                    features_normalized, features_normalized.T
+                )
+                
+                # Log to wandb (only on rank 0)
+                self._log_gram_matrix(trainer, gram_matrix)
+        except Exception as e:
+            # Gracefully handle errors to avoid interrupting training
+            if trainer.global_rank == 0:
+                print(f"Warning: Failed to log gram matrix at step {trainer.global_step}: {e}")
     
     @rank_zero_only
     def _log_gram_matrix(self, trainer, gram_matrix: torch.Tensor) -> None:
