@@ -20,24 +20,31 @@ class GramMatrixCallback(Callback):
     
     The gram matrix shows the similarity between normalized features
     for all samples in a batch, computed after DDP aggregation.
+    
+    Note: This callback performs an additional forward pass to extract features,
+    which allows it to remain decoupled from the training step implementation.
     """
     
     def __init__(
         self,
         log_every_n_steps: int = 100,
         feature_key: str = "teacher_cls_token",
+        max_samples: int = 128,
     ):
         """
         Initialize the GramMatrixCallback.
         
         Args:
             log_every_n_steps: Log the gram matrix every N training steps
-            feature_key: Key to extract features from model outputs 
+            feature_key: Key to extract features from model outputs under the "pred" key
                         (default: "teacher_cls_token")
+            max_samples: Maximum number of samples to include in gram matrix
+                        to avoid memory issues (default: 128)
         """
         super().__init__()
         self.log_every_n_steps = log_every_n_steps
         self.feature_key = feature_key
+        self.max_samples = max_samples
     
     def on_train_batch_end(
         self, 
@@ -58,40 +65,101 @@ class GramMatrixCallback(Callback):
         
         # Get the last batch outputs from the model
         # We need to do a forward pass to get features
+        features = None
+        error_occurred = False
+        
         try:
-            with torch.no_grad():
-                views = batch[0]
-                model_outputs = pl_module.model(views)
-                features = model_outputs["pred"].get(self.feature_key, None)
+            # Validate batch structure
+            if not isinstance(batch, (list, tuple)) or len(batch) < 1:
+                if trainer.global_rank == 0:
+                    trainer.logger.experiment.log({
+                        "gram_matrix_error": f"Invalid batch structure at step {trainer.global_step}"
+                    })
+                error_occurred = True
+            else:
+                with torch.no_grad():
+                    views = batch[0]
+                    model_outputs = pl_module.model(views)
+                    
+                    # Safe nested dictionary access
+                    pred_dict = model_outputs.get("pred", {})
+                    features = pred_dict.get(self.feature_key, None)
+                    
+                    if features is None:
+                        if trainer.global_rank == 0:
+                            trainer.logger.experiment.log({
+                                "gram_matrix_error": f"Feature key '{self.feature_key}' not found at step {trainer.global_step}"
+                            })
+                        error_occurred = True
+                    else:
+                        # Validate feature shape (should be [batch_size, feature_dim])
+                        if features.dim() != 2:
+                            if trainer.global_rank == 0:
+                                trainer.logger.experiment.log({
+                                    "gram_matrix_error": f"Expected 2D features, got shape {features.shape} at step {trainer.global_step}"
+                                })
+                            features = None
+                            error_occurred = True
+        except Exception as e:
+            # Ensure all ranks know an error occurred
+            error_occurred = True
+            features = None
+            if trainer.global_rank == 0:
+                import logging
+                logging.warning(f"Failed to extract features for gram matrix at step {trainer.global_step}: {e}")
+        
+        # Ensure all DDP ranks proceed together to avoid hangs
+        # Only continue if features were successfully extracted
+        if error_occurred or features is None:
+            return
+        
+        try:
+            # Normalize features
+            features_normalized = F.normalize(features, dim=-1, p=2)
+            
+            # Gather features across all DDP ranks
+            if trainer.world_size > 1:
+                # All ranks must participate in gather
+                gathered_features = [
+                    torch.zeros_like(features_normalized) 
+                    for _ in range(trainer.world_size)
+                ]
+                torch.distributed.all_gather(gathered_features, features_normalized)
+                features_normalized = torch.cat(gathered_features, dim=0)
                 
-                if features is None:
-                    return
-                
-                # Normalize features
-                features_normalized = F.normalize(features, dim=-1, p=2)
-                
-                # Gather features across all DDP ranks
-                if trainer.world_size > 1:
-                    # Gather from all ranks
-                    gathered_features = [
-                        torch.zeros_like(features_normalized) 
-                        for _ in range(trainer.world_size)
-                    ]
-                    torch.distributed.all_gather(gathered_features, features_normalized)
-                    features_normalized = torch.cat(gathered_features, dim=0)
-                
-                # Compute gram matrix (similarity matrix)
-                # Shape: [batch_size, batch_size]
-                gram_matrix = torch.matmul(
-                    features_normalized, features_normalized.T
+                # Clean up intermediate tensors to save memory
+                del gathered_features
+            
+            # Limit number of samples to avoid memory issues
+            if features_normalized.shape[0] > self.max_samples:
+                # Sample uniformly
+                indices = torch.linspace(
+                    0, features_normalized.shape[0] - 1, self.max_samples, dtype=torch.long
                 )
-                
-                # Log to wandb (only on rank 0)
-                self._log_gram_matrix(trainer, gram_matrix)
+                features_normalized = features_normalized[indices]
+            
+            # Compute gram matrix (similarity matrix)
+            # Shape: [N, N] where N <= max_samples
+            gram_matrix = torch.matmul(
+                features_normalized, features_normalized.T
+            )
+            
+            # Log to wandb (only on rank 0)
+            self._log_gram_matrix(trainer, gram_matrix)
+            
         except Exception as e:
             # Gracefully handle errors to avoid interrupting training
             if trainer.global_rank == 0:
-                print(f"Warning: Failed to log gram matrix at step {trainer.global_step}: {e}")
+                import logging
+                logging.warning(f"Failed to compute/log gram matrix at step {trainer.global_step}: {e}")
+        finally:
+            # Clean up to prevent memory leaks
+            if features is not None:
+                del features
+            if 'features_normalized' in locals():
+                del features_normalized
+            if 'gram_matrix' in locals():
+                del gram_matrix
     
     @rank_zero_only
     def _log_gram_matrix(self, trainer, gram_matrix: torch.Tensor) -> None:
@@ -123,18 +191,20 @@ class GramMatrixCallback(Callback):
         # Add grid for better readability
         ax.grid(False)
         
-        # Log to wandb
+        # Log to wandb if using WandbLogger
         if trainer.logger is not None:
             try:
-                # Try to log as wandb Image
-                import wandb
-                trainer.logger.experiment.log({
-                    "gram_matrix": wandb.Image(fig),
-                    "global_step": trainer.global_step,
-                })
-            except (ImportError, AttributeError):
-                # Fallback: just close the figure
-                pass
+                # Check if using WandbLogger
+                from pytorch_lightning.loggers import WandbLogger
+                if isinstance(trainer.logger, WandbLogger):
+                    import wandb
+                    trainer.logger.experiment.log({
+                        "gram_matrix": wandb.Image(fig),
+                    })
+            except (ImportError, AttributeError) as e:
+                # Fallback: log a warning if wandb is not available
+                import logging
+                logging.warning(f"Could not log gram matrix to wandb: {e}")
         
         # Close figure to free memory
         plt.close(fig)
