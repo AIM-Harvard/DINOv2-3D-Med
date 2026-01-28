@@ -26,7 +26,12 @@ def import_module_from_path(module_name: str, module_path: str) -> None:
 
     module_path = Path(module_path).resolve() / "__init__.py"
     if not module_path.is_file():
-        raise FileNotFoundError(f"No `__init__.py` in `{module_path}`.")
+        raise FileNotFoundError(
+            f"No `__init__.py` found at `{module_path}`.\n"
+            f"If your config contains an absolute path like '/home/suraj/...', "
+            f"please update it to use a relative path (e.g., 'project: \".\"') "
+            f"or set it to your local repository root."
+        )
     spec = importlib.util.spec_from_file_location(module_name, str(module_path))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

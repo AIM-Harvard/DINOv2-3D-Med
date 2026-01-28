@@ -8,6 +8,7 @@ import argparse
 import torch
 import os
 import sys
+from pathlib import Path
 from typing import Dict, Any
 
 from utils.imports import import_module_from_path
@@ -30,12 +31,22 @@ def modify_state_dict(state_dict: Dict[str, Any]) -> Dict[str, Any]:
 
 def process_checkpoint(input_path: str, output_path: str, 
                       remove_cls_token: bool = True,
-                      arch_class_name: str = 'PrimusM') -> None:
+                      arch_class_name: str = 'PrimusM',
+                      project_path: str = '.') -> None:
     """Process checkpoint file and save in nnUNet format"""
     
     # Import project module to handle checkpoint dependencies
-    project_path = "/home/suraj/Repositories/DINOv2_3D"
-    import_module_from_path("project", project_path)
+    # Normalize and resolve project path
+    project_path = Path(project_path).expanduser()
+    
+    if not project_path.is_absolute():
+        # Resolve relative to the repository root
+        script_dir = Path(__file__).resolve().parent.parent.parent
+        project_path = (script_dir / project_path).resolve()
+    else:
+        project_path = project_path.resolve()
+    
+    import_module_from_path("project", str(project_path))
     
     print(f"Loading checkpoint from: {input_path}")
     try:
@@ -86,6 +97,8 @@ def main():
                        help="Architecture class name (default: PrimusM)")
     parser.add_argument("--keep-cls-token", action="store_true",
                        help="Keep CLS token in positional embeddings")
+    parser.add_argument("--project-path", default=".",
+                       help="Path to the project root (default: current directory)")
     
     args = parser.parse_args()
     
@@ -100,7 +113,8 @@ def main():
             input_path=args.input_path,
             output_path=args.output_path,
             remove_cls_token=not args.keep_cls_token,
-            arch_class_name=args.arch_class_name
+            arch_class_name=args.arch_class_name,
+            project_path=args.project_path
         )
         print("Checkpoint conversion completed successfully!")
     except Exception as e:

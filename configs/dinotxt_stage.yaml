@@ -1,5 +1,5 @@
 # This version of the YAML uses processed patches
-project: /home/suraj/Repositories/DINOv2_3D
+project: "."
 run_name: "DINOv2_pretrain_primus"
 img_size: [160, 160, 160]
 hidden_size: 864
