@@ -33,6 +33,10 @@ trainer:
       save_last: True
       every_n_epochs: 1
       save_on_train_epoch_end: True
+    - _target_: project.callbacks.GramMatrixCallback
+      log_every_n_steps: 100
+      feature_key: "teacher_cls_token"
+      max_samples: 128
 
 lightning_module:
     _target_: project.training.DINOv2_3D_LightningModule
