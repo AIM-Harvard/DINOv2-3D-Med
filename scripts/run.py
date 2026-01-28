@@ -5,6 +5,7 @@ Script to run 3D DINOv2 training or prediction using a YAML config.
 """
 
 import os
+from pathlib import Path
 from torch.utils.data import DataLoader
 from monai.bundle import ConfigParser
 
@@ -34,7 +35,19 @@ def run(mode, config_file: str, **config_overrides):
     parser.update(config_overrides)
 
     project_path = parser.get("project")
-    import_module_from_path("project", project_path)
+    
+    # Normalize and resolve project path
+    # If project_path is relative, resolve it relative to the repository root
+    project_path = Path(project_path).expanduser()
+    
+    if not project_path.is_absolute():
+        # Get the repository root (parent of the scripts directory)
+        repo_root = Path(__file__).resolve().parent.parent
+        project_path = (repo_root / project_path).resolve()
+    else:
+        project_path = project_path.resolve()
+    
+    import_module_from_path("project", str(project_path))
 
     trainer = parser.get_parsed_content("trainer")
     lightning_module = parser.get_parsed_content("lightning_module")

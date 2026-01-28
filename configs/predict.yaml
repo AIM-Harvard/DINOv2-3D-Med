@@ -1,4 +1,4 @@
-project: /home/suraj/Repositories/DINOv2_3D
+project: "."
 num_workers: 8
 
 trainer:
@@ -16,7 +16,7 @@ trainer:
         name: "get_predictions"
     callbacks:
       - _target_: project.callbacks.prediction_saver.SavePredictions
-        path: /home/suraj/Repositories/DINOv2_3D/predictions.csv
+        path: ./predictions.csv
 
 lightning_module:
     _target_: project.models.DINOv2_3D_LightningModule
