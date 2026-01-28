@@ -8,6 +8,7 @@ import argparse
 import torch
 import os
 import sys
+from pathlib import Path
 from typing import Dict, Any
 
 from utils.imports import import_module_from_path
@@ -36,11 +37,10 @@ def process_checkpoint(input_path: str, output_path: str,
     
     # Import project module to handle checkpoint dependencies
     # Normalize and resolve project path
-    from pathlib import Path
     project_path = Path(project_path).expanduser()
     
     if not project_path.is_absolute():
-        # Resolve relative to script location or current working directory
+        # Resolve relative to the repository root
         script_dir = Path(__file__).resolve().parent.parent.parent
         project_path = (script_dir / project_path).resolve()
     else:

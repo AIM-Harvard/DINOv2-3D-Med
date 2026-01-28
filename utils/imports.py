@@ -28,7 +28,6 @@ def import_module_from_path(module_name: str, module_path: str) -> None:
     if not module_path.is_file():
         raise FileNotFoundError(
             f"No `__init__.py` found at `{module_path}`.\n"
-            f"Attempted to import from: {module_path.parent}\n"
             f"If your config contains an absolute path like '/home/suraj/...', "
             f"please update it to use a relative path (e.g., 'project: \".\"') "
             f"or set it to your local repository root."
