@@ -5,10 +5,13 @@ This callback computes and logs a heatmap showing the similarity between
 normalized features for each sample in a batch (after DDP aggregation).
 """
 
+import math
+import os
 import torch
 import torch.nn.functional as F
 from pytorch_lightning import Callback
 from pytorch_lightning.utilities import rank_zero_only
+import torch.distributed as dist
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Any
@@ -45,6 +48,8 @@ class GramMatrixCallback(Callback):
         self.log_every_n_steps = log_every_n_steps
         self.feature_key = feature_key
         self.max_samples = max_samples
+        self._warned_no_wandb = False
+        self._warned_wandb_disabled = False
     
     def on_train_batch_end(
         self, 
@@ -110,7 +115,12 @@ class GramMatrixCallback(Callback):
         
         # Ensure all DDP ranks proceed together to avoid hangs
         # Only continue if features were successfully extracted
-        if error_occurred or features is None:
+        has_features = 0 if error_occurred or features is None else 1
+        device = features.device if features is not None else pl_module.device
+        has_features_tensor = torch.tensor(has_features, device=device, dtype=torch.int)
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(has_features_tensor, op=dist.ReduceOp.MIN)
+        if has_features_tensor.item() == 0:
             return
         
         try:
@@ -118,13 +128,26 @@ class GramMatrixCallback(Callback):
             features_normalized = F.normalize(features, dim=-1, p=2)
             
             # Gather features across all DDP ranks
-            if trainer.world_size > 1:
+            world_size = trainer.world_size if dist.is_available() and dist.is_initialized() else 1
+            if world_size > 1:
+                # Reduce per-rank payload before all_gather
+                per_rank_max = max(1, math.ceil(self.max_samples / world_size))
+                if features_normalized.shape[0] > per_rank_max:
+                    indices = torch.linspace(
+                        0,
+                        features_normalized.shape[0] - 1,
+                        per_rank_max,
+                        dtype=torch.long,
+                        device=features_normalized.device,
+                    )
+                    features_normalized = features_normalized[indices]
+
                 # All ranks must participate in gather
                 gathered_features = [
                     torch.zeros_like(features_normalized) 
-                    for _ in range(trainer.world_size)
+                    for _ in range(world_size)
                 ]
-                torch.distributed.all_gather(gathered_features, features_normalized)
+                dist.all_gather(gathered_features, features_normalized)
                 features_normalized = torch.cat(gathered_features, dim=0)
                 
                 # Clean up intermediate tensors to save memory
@@ -134,7 +157,11 @@ class GramMatrixCallback(Callback):
             if features_normalized.shape[0] > self.max_samples:
                 # Sample uniformly
                 indices = torch.linspace(
-                    0, features_normalized.shape[0] - 1, self.max_samples, dtype=torch.long
+                    0,
+                    features_normalized.shape[0] - 1,
+                    self.max_samples,
+                    dtype=torch.long,
+                    device=features_normalized.device,
                 )
                 features_normalized = features_normalized[indices]
             
@@ -196,11 +223,36 @@ class GramMatrixCallback(Callback):
             try:
                 # Check if using WandbLogger
                 from pytorch_lightning.loggers import WandbLogger
-                if isinstance(trainer.logger, WandbLogger):
-                    import wandb
-                    trainer.logger.experiment.log({
-                        "gram_matrix": wandb.Image(fig),
-                    })
+                import wandb
+
+                if (
+                    os.environ.get("WANDB_DISABLED") in {"1", "true", "True"}
+                    or os.environ.get("WANDB_MODE") == "disabled"
+                ):
+                    if not self._warned_wandb_disabled:
+                        import logging
+
+                        logging.warning(
+                            "WANDB is disabled via environment variables; gram matrix will not be logged."
+                        )
+                        self._warned_wandb_disabled = True
+                    return
+
+                wandb_logger = self._get_wandb_logger(trainer, WandbLogger)
+                if wandb_logger is None:
+                    if not self._warned_no_wandb:
+                        import logging
+
+                        logging.warning(
+                            "WandbLogger not found on trainer; gram matrix will not be logged."
+                        )
+                        self._warned_no_wandb = True
+                    return
+
+                wandb_logger.experiment.log(
+                    {"gram_matrix": wandb.Image(fig)},
+                    step=trainer.global_step,
+                )
             except (ImportError, AttributeError) as e:
                 # Fallback: log a warning if wandb is not available
                 import logging
@@ -208,3 +260,17 @@ class GramMatrixCallback(Callback):
         
         # Close figure to free memory
         plt.close(fig)
+
+    def _get_wandb_logger(self, trainer, wandb_logger_type):
+        loggers = []
+        if hasattr(trainer, "loggers") and trainer.loggers is not None:
+            loggers = list(trainer.loggers)
+        elif hasattr(trainer.logger, "loggers"):
+            loggers = list(trainer.logger.loggers)
+        else:
+            loggers = [trainer.logger]
+
+        for logger in loggers:
+            if isinstance(logger, wandb_logger_type):
+                return logger
+        return None
