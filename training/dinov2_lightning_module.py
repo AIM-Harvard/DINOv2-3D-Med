@@ -240,6 +240,11 @@ class DINOv2_3D_LightningModule(LightningModule):
 
         self.criterion.max_steps = max_steps
         self.criterion.max_epochs = self.trainer.max_epochs
+        # Store so on_train_batch_end uses the same max_steps for the teacher EMA
+        # schedule. Previously it used max(estimated_stepping_batches, 1000) while
+        # the loss used max(estimated_stepping_batches, 1), causing misaligned
+        # momentum and temperature schedules on short experiments.
+        self._training_max_steps = max_steps
         return [optimizer], [scheduler]
 
     def configure_gradient_clipping(
@@ -274,8 +279,10 @@ class DINOv2_3D_LightningModule(LightningModule):
         update_param_groups(optimizer, updates=updates)
 
     def on_train_batch_end(self, outputs, batch, batch_idx):
-        # EMA update of teacher - DDP handles synchronization automatically
-        max_steps = max(self.trainer.estimated_stepping_batches, 1000)
+        # EMA update of teacher - DDP handles synchronization automatically.
+        # Use _training_max_steps set by configure_optimizers so the teacher
+        # momentum schedule stays aligned with the loss temperature schedule.
+        max_steps = getattr(self, "_training_max_steps", max(self.trainer.estimated_stepping_batches, 1))
         self.model.update_teacher(
             global_step=self.trainer.global_step, max_steps=max_steps
         )

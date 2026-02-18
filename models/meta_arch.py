@@ -203,35 +203,44 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
 
         # Teacher forward
         with torch.no_grad():
-            teacher_cls_token, teacher_patch_tokens = self.forward_teacher(global_views)
-            teacher_cls_token = self.teacher_dino_head(teacher_cls_token)
+            teacher_cls_token_backbone, teacher_patch_tokens = self.forward_teacher(
+                global_views
+            )
+            teacher_cls_token = self.teacher_dino_head(teacher_cls_token_backbone)
             teacher_patch_tokens = self.teacher_ibot_head(teacher_patch_tokens)
 
         # Student forward
-        student_global_cls_token, student_global_patch_tokens = self.forward_student(
+        student_global_cls_token_backbone, student_global_patch_tokens = self.forward_student(
             global_views, mask=mask
         )
-        student_global_cls_token = self.student_dino_head(student_global_cls_token)
+        student_global_cls_token = self.student_dino_head(student_global_cls_token_backbone)
         student_global_patch_tokens = self.student_ibot_head(
             student_global_patch_tokens
         )
 
         # Local views
         if local_views is not None:
-            student_local_cls_token, _ = self.forward_student(local_views, mask=None)
-            student_local_cls_token = self.student_dino_head(student_local_cls_token)
+            student_local_cls_token_backbone, _ = self.forward_student(local_views, mask=None)
+            student_local_cls_token = self.student_dino_head(student_local_cls_token_backbone)
             student_cls_token = torch.cat(
                 [student_global_cls_token, student_local_cls_token], dim=0
             )
+            student_cls_token_backbone = torch.cat(
+                [student_global_cls_token_backbone, student_local_cls_token_backbone], dim=0
+            )
         else:
             student_cls_token = student_global_cls_token
+            student_cls_token_backbone = student_global_cls_token_backbone
 
         out = {
             "teacher_cls_token": teacher_cls_token,
+            "teacher_cls_token_backbone": teacher_cls_token_backbone,
             "student_cls_token": student_cls_token,
+            "student_cls_token_backbone": student_cls_token_backbone,
             "teacher_patch_tokens": teacher_patch_tokens,
             "student_patch_tokens": student_global_patch_tokens,
             "student_glob_cls_token": student_global_cls_token,
+            "student_glob_cls_token_backbone": student_global_cls_token_backbone,
             "mask": patch_mask,
             "n_local_views": torch.tensor(len(views) - 2, device=device),
         }
