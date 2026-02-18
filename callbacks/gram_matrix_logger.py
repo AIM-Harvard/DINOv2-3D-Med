@@ -14,7 +14,7 @@ from pytorch_lightning import Callback
 from pytorch_lightning.utilities import rank_zero_only
 import torch.distributed as dist
 import matplotlib.pyplot as plt
-from typing import Any
+from typing import Any, Dict, Optional
 import logging
 
 
@@ -32,11 +32,11 @@ class GramMatrixCallback(Callback):
     def __init__(
         self,
         log_every_n_steps: int = 100,
-        feature_key: str = "teacher_cls_token",
+        feature_key: str = "student_cls_token",
         max_samples: int = 128,
         saturation_offdiag_threshold: float = 0.995,
         saturation_offdiag_std_threshold: float = 0.01,
-        saturation_sample_var_threshold: float = 1e-4,
+        saturation_sample_var_threshold: Optional[float] = None,
         auto_fallback_to_backbone_on_saturation: bool = True,
     ):
         """
@@ -45,15 +45,19 @@ class GramMatrixCallback(Callback):
         Args:
             log_every_n_steps: Log the gram matrix every N training steps
             feature_key: Key to extract features from model outputs under the "pred" key
-                        (default: "teacher_cls_token")
+                        (default: "student_cls_token"). Student features change much
+                        faster than the slowly-drifting EMA teacher and are far more
+                        informative for monitoring training dynamics and early collapse.
+                        Use "teacher_cls_token_backbone" for a stable reference point.
             max_samples: Maximum number of samples to include in gram matrix
                         to avoid memory issues (default: 128)
             saturation_offdiag_threshold: Threshold used to flag near-constant off-diagonal
                         cosine similarities.
             saturation_offdiag_std_threshold: Maximum off-diagonal std to treat as
                         suspiciously constant.
-            saturation_sample_var_threshold: Maximum sample variance threshold to treat
-                        representation as collapsed.
+            saturation_sample_var_threshold: Optional maximum sample variance threshold
+                        to treat representation as collapsed. Set to None to disable
+                        sample-variance gating and rely on off-diagonal criteria only.
             auto_fallback_to_backbone_on_saturation: If true, fallback to backbone
                         feature keys when projected-head features look framework-saturated.
         """
@@ -101,38 +105,52 @@ class GramMatrixCallback(Callback):
                 )
                 error_occurred = True
             else:
-                with torch.no_grad():
-                    views = batch[0]
-                    model_outputs = pl_module.model(views)
-                    
-                    # Safe nested dictionary access
-                    pred_dict = model_outputs.get("pred", {})
-                    features = pred_dict.get(self.feature_key, None)
-                    fallback_key = self._fallback_feature_key_for(self.feature_key)
-                    if fallback_key is not None:
-                        fallback_features = pred_dict.get(fallback_key, None)
-                    
-                    if features is None:
-                        self._report_extraction_issue(
-                            trainer,
-                            f"Feature key '{self.feature_key}' not found at step {trainer.global_step}",
-                        )
-                        error_occurred = True
-                    else:
-                        # Validate feature shape (should be [batch_size, feature_dim])
-                        if features.dim() != 2:
+                model = getattr(pl_module, "model", None)
+                model_training_states: Dict[torch.nn.Module, bool] = {}
+                if model is not None:
+                    # Preserve exact train/eval state for the full model tree so
+                    # monitoring can run deterministically without mutating caller state.
+                    model_training_states = self._snapshot_training_states(model)
+                    model.eval()
+                try:
+                    with torch.no_grad():
+                        views = self._select_monitor_views(batch, trainer)
+                        if views is None:
+                            error_occurred = True
+                            raise RuntimeError("Unable to derive monitoring views from batch")
+                        model_outputs = pl_module.model(views)
+
+                        # Safe nested dictionary access
+                        pred_dict = model_outputs.get("pred", {})
+                        features = pred_dict.get(self.feature_key, None)
+                        fallback_key = self._fallback_feature_key_for(self.feature_key)
+                        if fallback_key is not None:
+                            fallback_features = pred_dict.get(fallback_key, None)
+
+                        if features is None:
                             self._report_extraction_issue(
                                 trainer,
-                                f"Expected 2D features, got shape {features.shape} at step {trainer.global_step}",
+                                f"Feature key '{self.feature_key}' not found at step {trainer.global_step}",
                             )
-                            features = None
                             error_occurred = True
-                        elif (
-                            fallback_features is not None
-                            and hasattr(fallback_features, "dim")
-                            and fallback_features.dim() != 2
-                        ):
-                            fallback_features = None
+                        else:
+                            # Validate feature shape (should be [batch_size, feature_dim])
+                            if features.dim() != 2:
+                                self._report_extraction_issue(
+                                    trainer,
+                                    f"Expected 2D features, got shape {features.shape} at step {trainer.global_step}",
+                                )
+                                features = None
+                                error_occurred = True
+                            elif (
+                                fallback_features is not None
+                                and hasattr(fallback_features, "dim")
+                                and fallback_features.dim() != 2
+                            ):
+                                fallback_features = None
+                finally:
+                    if model is not None and model_training_states:
+                        self._restore_training_states(model_training_states)
         except Exception as e:
             # Ensure all ranks know an error occurred
             error_occurred = True
@@ -469,8 +487,53 @@ class GramMatrixCallback(Callback):
             sampled = sampled[indices]
         return sampled
 
-    def _compute_saturation_stats(self, gram_matrix: torch.Tensor, features: torch.Tensor):
-        """Compute robust saturation statistics for root-cause diagnostics."""
+    def _snapshot_training_states(self, module: torch.nn.Module) -> Dict[torch.nn.Module, bool]:
+        """Capture training flags for a module tree so they can be restored exactly."""
+        return {submodule: submodule.training for submodule in module.modules()}
+
+    def _restore_training_states(self, states: Dict[torch.nn.Module, bool]) -> None:
+        """Restore per-module training flags previously captured by _snapshot_training_states."""
+        for submodule, was_training in states.items():
+            submodule.train(was_training)
+
+    def _select_monitor_views(self, batch: Any, trainer) -> Any:
+        """Derive monitoring views without assuming a fixed batch[0] layout."""
+        views_container = batch[0]
+        if isinstance(views_container, (list, tuple)):
+            if len(views_container) == 0:
+                self._report_extraction_issue(
+                    trainer, f"No views found in batch at step {trainer.global_step}"
+                )
+                return None
+            if len(views_container) < 2 and trainer.global_rank == 0:
+                logging.warning(
+                    "Only %d view(s) available for gram-matrix monitoring at step %d; expected >=2 global views.",
+                    len(views_container),
+                    trainer.global_step,
+                )
+            return views_container[: min(2, len(views_container))]
+        if torch.is_tensor(views_container):
+            return views_container
+        self._report_extraction_issue(
+            trainer,
+            f"Unsupported views container type {type(views_container)} at step {trainer.global_step}",
+        )
+        return None
+
+    def _compute_saturation_stats(
+        self,
+        gram_matrix: torch.Tensor,
+        features: torch.Tensor,
+        raw_features: torch.Tensor = None,
+    ):
+        """Compute robust saturation statistics for root-cause diagnostics.
+
+        Args:
+            gram_matrix: Cosine similarity gram matrix [N, N].
+            features: The (normalized) features used to build the gram matrix [N, D].
+            raw_features: Optional variance source [N, D]. It is used only when
+                shape-matched with ``features`` to avoid incoherent diagnostics.
+        """
         n = gram_matrix.shape[0]
         if n <= 1:
             return {
@@ -482,7 +545,15 @@ class GramMatrixCallback(Callback):
         offdiag_mask = ~torch.eye(n, dtype=torch.bool, device=gram_matrix.device)
         offdiag_vals = gram_matrix[offdiag_mask]
 
-        sample_var = features.float().var(dim=0, unbiased=False).mean().item()
+        var_source = features
+        if (
+            raw_features is not None
+            and hasattr(raw_features, "dim")
+            and raw_features.dim() == 2
+            and raw_features.shape == features.shape
+        ):
+            var_source = raw_features
+        sample_var = var_source.float().var(dim=0, unbiased=False).mean().item()
         return {
             "offdiag_mean": offdiag_vals.mean().item(),
             "offdiag_std": offdiag_vals.std(unbiased=False).item(),
@@ -490,9 +561,14 @@ class GramMatrixCallback(Callback):
         }
 
     def _is_saturated(self, stats) -> bool:
-        return (
+        offdiag_saturated = (
             stats["offdiag_mean"] >= self.saturation_offdiag_threshold
             and stats["offdiag_std"] <= self.saturation_offdiag_std_threshold
+        )
+        if self.saturation_sample_var_threshold is None:
+            return offdiag_saturated
+        return (
+            offdiag_saturated
             and stats["sample_variance"] <= self.saturation_sample_var_threshold
         )
 
@@ -535,7 +611,12 @@ class GramMatrixCallback(Callback):
         return None
 
     def _build_stage_metrics(self, stage_name: str, features: torch.Tensor) -> dict:
-        """Build stable stage-level telemetry metrics from features."""
+        """Build stable stage-level telemetry metrics from features.
+
+        Args:
+            stage_name: Label for this pipeline stage.
+            features: Feature tensor to analyse.
+        """
         if features is None or not hasattr(features, "dim") or features.dim() != 2:
             stats = {
                 "offdiag_mean": 0.0,
@@ -543,9 +624,9 @@ class GramMatrixCallback(Callback):
                 "sample_variance": 0.0,
             }
         else:
-            normalized = F.normalize(features, dim=-1, p=2)
-            gram = torch.matmul(normalized, normalized.T)
-            stats = self._compute_saturation_stats(gram, normalized)
+            gram_features = F.normalize(features, dim=-1, p=2)
+            gram = torch.matmul(gram_features, gram_features.T)
+            stats = self._compute_saturation_stats(gram, gram_features)
         return {
             f"gram_matrix_debug/stage_{stage_name}_offdiag_mean": stats["offdiag_mean"],
             f"gram_matrix_debug/stage_{stage_name}_offdiag_std": stats["offdiag_std"],
