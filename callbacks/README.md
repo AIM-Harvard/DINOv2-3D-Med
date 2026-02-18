@@ -28,6 +28,10 @@ callbacks:
     log_every_n_steps: 100      # Log every 100 training steps
     feature_key: "teacher_cls_token"  # Which features to use
     max_samples: 128            # Max samples to include (prevents OOM)
+    saturation_offdiag_threshold: 0.995
+    saturation_offdiag_std_threshold: 0.01
+    saturation_sample_var_threshold: 1.0e-6
+    auto_fallback_to_backbone_on_saturation: true
 ```
 
 ### Parameters
@@ -38,6 +42,10 @@ callbacks:
   - `"student_cls_token"`: Student network's CLS token features
   - `"student_glob_cls_token"`: Student global view CLS tokens
 - **max_samples** (int, default=128): Maximum number of samples to include in the gram matrix to prevent out-of-memory errors
+- **saturation_offdiag_threshold** (float, default=0.995): Off-diagonal cosine threshold used to flag suspicious saturation.
+- **saturation_offdiag_std_threshold** (float, default=0.01): Maximum off-diagonal standard deviation considered near-constant.
+- **saturation_sample_var_threshold** (float, default=1e-6): Maximum across-sample variance to flag possible collapse.
+- **auto_fallback_to_backbone_on_saturation** (bool, default=True): When projection-head features saturate, automatically retries with backbone feature keys to isolate framework-path vs model-side collapse.
 
 ### Implementation Details
 
@@ -54,7 +62,19 @@ callbacks:
    - Safe nested dictionary access
    - Logs warnings for debugging
 
-4. **Visualization**: Creates a heatmap with:
+4. **Framework Root-Cause Diagnostics**:
+   - Computes saturation statistics (`offdiag_mean`, `offdiag_std`, sample variance)
+   - Emits debug metrics under `gram_matrix_debug/*`
+   - Emits stage-level diagnostics for:
+     - `gram_matrix_debug/stage_feature_extraction_*`
+     - `gram_matrix_debug/stage_normalization_*`
+     - `gram_matrix_debug/stage_sampling_*`
+     - `gram_matrix_debug/stage_gather_*`
+   - Differentiates likely framework-path saturation from likely model-side collapse
+   - Can automatically fallback to backbone keys (for example `teacher_cls_token_backbone`) when projected features look framework-saturated
+   - Skips image and telemetry logging gracefully when `WANDB_DISABLED` or `WANDB_MODE=disabled`
+
+5. **Visualization**: Creates a heatmap with:
    - Viridis colormap (good for colorblind accessibility)
    - Fixed color scale from -1 to 1
    - Colorbar showing cosine similarity
@@ -66,6 +86,7 @@ The callback logs to wandb under the key `"gram_matrix"`. You'll see a heatmap w
 - The diagonal is always bright (each sample is identical to itself)
 - Off-diagonal elements show cross-sample similarity
 - Patterns in the matrix can reveal clustering or diversity in the learned features
+- Additional framework diagnostics are logged under `gram_matrix_debug/*` when logger telemetry is available
 
 ### Troubleshooting
 
@@ -75,6 +96,14 @@ If the gram matrix is not appearing in wandb:
 2. Check that the `feature_key` matches a key in your model's outputs
 3. Look for warning messages in the training logs
 4. Verify that matplotlib is installed (`matplotlib>=3.5.0,<4.0.0`)
+5. If values are constantly near `1.0`, inspect `gram_matrix_debug/root_cause_*`:
+   - `root_cause_framework=1` suggests projection-path saturation and fallback correction was applied
+   - `root_cause_model=1` suggests true model-side collapse persisted even on backbone features
+6. Use stage keys to localize saturation:
+   - `stage_feature_extraction_*`: raw extracted feature signal
+   - `stage_normalization_*`: post-normalization signal
+   - `stage_sampling_*`: post-sampling signal
+   - `stage_gather_*`: post-DDP merge signal used for final gram matrix
 
 ### Advanced Usage
 

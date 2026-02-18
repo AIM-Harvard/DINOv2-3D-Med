@@ -36,6 +36,10 @@ trainer:
       log_every_n_steps: "%trainer#log_every_n_steps"
       feature_key: "teacher_cls_token"
       max_samples: 128
+      saturation_offdiag_threshold: 0.995
+      saturation_offdiag_std_threshold: 0.01
+      saturation_sample_var_threshold: 1e-4
+      auto_fallback_to_backbone_on_saturation: true
 
 lightning_module:
     _target_: project.training.DINOv2_3D_LightningModule
