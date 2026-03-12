@@ -1,6 +1,8 @@
 # DINOv2-3D: Self-Supervised 3D Vision Transformer Pretraining
 
-A configuration-first (and therefore easily understandable and trackable) repository for a 3D implementation od DINOv2. Based on the implementations from Lightly (Thank you!) and integrated with Pytorch Lightning. 3D capabilities of this implementation are largely through MONAI's functionalities
+> ⚠️ **Warning:** This implementation has **not** been extensively benchmarked and you should **not** expect it to work out of the box for your specific task. It is primarily a reimplementation codebase aimed at providing easier understanding and cleaner interfaces for DINOv2 in 3D medical imaging. If you need a well-tuned configuration for a specific medical imaging task, finding and validating that config is on you — although this repo includes plentiful debugging tools (see [Gram Matrix Debugging](#gram-matrix-debugging)) to help you get there. Feel free to [open an issue](https://github.com/AIM-Harvard/DINOv2-3D-Med/issues) and I'm happy to chat!
+
+A configuration-first (and therefore easily understandable and trackable) repository for a 3D implementation of DINOv2. Based on the implementations from Lightly (Thank you!) and integrated with Pytorch Lightning. 3D capabilities of this implementation are largely through MONAI's functionalities
 
 ## What you can do with this Repo
 - Train your own 3D Dinov2 on CT, MRI, PET data, etc. with very little configuration other than whats been provided. 
