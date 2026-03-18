@@ -51,36 +51,67 @@ Here the train.yaml contains most of the heart of the configuration. primus.yaml
 - `configs/train.yaml`: Main training configuration with complete setup
 - `configs/predict.yaml`: Configuration for inference/prediction tasks
 
-### Gram Matrix Debugging
-This repo includes `project.callbacks.GramMatrixCallback` (configured in `configs/train.yaml`) to monitor representation collapse and logging health during training.
+### Collapse Monitoring Callbacks
 
-Debug metrics logged to Weights & Biases:
-- `gram_matrix_debug/offdiag_mean`: Mean off-diagonal cosine similarity (higher can indicate collapse).
-- `gram_matrix_debug/offdiag_std`: Spread of off-diagonal similarities (very low can indicate near-constant representations).
-- `gram_matrix_debug/sample_variance`: Mean per-dimension variance of monitored features.
-- `gram_matrix_debug/fallback_used`: `1.0` when fallback backbone features were used after saturation detection.
-- `gram_matrix_debug/root_cause_framework`: `1.0` when fallback resolves saturation (likely feature/key/pipeline issue).
-- `gram_matrix_debug/root_cause_model`: `1.0` when saturation persists on primary and fallback features.
-- `gram_matrix_debug/root_cause_unknown`: `1.0` when saturation is detected but no fallback feature is available.
-Stage diagnostics also logged:
-- `gram_matrix_debug/stage_feature_extraction_offdiag_mean|std|sample_variance`
-- `gram_matrix_debug/stage_normalization_offdiag_mean|std|sample_variance`
-- `gram_matrix_debug/stage_sampling_offdiag_mean|std|sample_variance`
-- `gram_matrix_debug/stage_gather_offdiag_mean|std|sample_variance`
+Three callbacks (configured in `configs/train.yaml`) track representation health during training. All log to Weights & Biases under the `collapse_monitor/` and `gram_matrix_debug/` namespaces.
 
-Key callback knobs (`configs/train.yaml`):
-- `feature_key`: Feature source under model `pred` outputs (default here: `student_cls_token`).
-- `saturation_offdiag_threshold` and `saturation_offdiag_std_threshold`: Collapse gate thresholds.
-- `saturation_sample_var_threshold`: Optional extra gate. Set to `null` to disable variance gating.
-- `auto_fallback_to_backbone_on_saturation`: Automatically retry using backbone feature keys.
-- `max_samples`: Caps gram-matrix sample count to reduce memory/time overhead.
+#### GramMatrixCallback
+Visualizes pairwise cosine similarity across a batch as a heatmap. Detects representational collapse by checking whether all features become nearly identical.
 
-Common debugging checklist:
-1. If no gram matrix appears in W&B, verify `WANDB_DISABLED` is not set and `WANDB_MODE` is not `disabled`.
-2. If warnings report missing feature keys, confirm `feature_key` exists in `model_outputs["pred"]`.
-3. If you see repeated saturation with `root_cause_model=1`, inspect augmentation, learning rate, and collapse-sensitive hyperparameters.
-4. If saturation disappears only when fallback is used, inspect head/projection-space behavior and keep fallback diagnostics enabled.
-5. If training is slowed by callback overhead, lower logging frequency (`log_every_n_steps`) or reduce `max_samples`.
+W&B metrics:
+- `gram_matrix`: heatmap image logged every `log_every_n_steps`
+- `gram_matrix_debug/offdiag_mean`: mean off-diagonal cosine similarity — rising toward 1.0 signals collapse
+- `gram_matrix_debug/offdiag_std`: spread of off-diagonal values — near zero means near-constant representations
+- `gram_matrix_debug/fallback_used`: `1.0` when backbone features replaced saturated projected features
+
+When `fallback_used=1.0`, a `logging.warning` fires identifying whether the collapse is framework-path (fallback healthy) or model-side (fallback also saturated). Check training logs for the exact message.
+
+Key knobs:
+- `feature_key`: which feature to monitor (`student_cls_token` by default — changes faster than EMA teacher)
+- `saturation_offdiag_threshold` / `saturation_offdiag_std_threshold`: gate thresholds for saturation
+- `saturation_sample_var_threshold`: optional third gate, `null` to rely on off-diagonal criteria only
+- `auto_fallback_to_backbone_on_saturation`: retry with backbone keys to isolate collapse source
+- `max_samples`: caps gram matrix size (memory/speed trade-off)
+
+Troubleshooting:
+1. No heatmap in W&B → check `WANDB_DISABLED` is unset and `WANDB_MODE` is not `disabled`
+2. Warning about missing feature key → confirm `feature_key` exists in `model_outputs["pred"]`
+3. `fallback_used` stays 0 but `offdiag_mean` is high → model-side collapse; check LR, augmentation, centering
+4. `fallback_used` flips to 1 → projection-head saturation, backbone is still healthy (often recovers)
+5. Callback overhead → increase `log_every_n_steps` or reduce `max_samples`
+
+#### TeacherEntropyCallback
+Monitors the Shannon entropy of the teacher's DINO-centered softmax distribution — the distribution the loss actually trains against.
+
+W&B metrics:
+- `collapse_monitor/teacher_entropy`: entropy in nats
+- `collapse_monitor/teacher_entropy_normalized`: entropy / log(output_dim), in [0, 1]
+
+Interpretation:
+- **Healthy**: normalized entropy ≈ 0.7–1.0 (teacher assigns mass across many prototypes)
+- **Collapse warning**: normalized entropy < 0.1 (teacher peaked on a few dimensions)
+
+Troubleshooting:
+1. Entropy drops suddenly → check centering (`dino_loss_fn.center`) and teacher temperature schedule
+2. Warning about `criterion.dino_loss_fn` not found → loss must expose `dino_loss_fn` attribute
+3. Entropy near 0 from the start → teacher temperature may be too low; check `teacher_temp_min`
+
+#### EffectiveRankCallback
+Computes the Roy & Vetterli (2007) effective rank of CLS token embeddings via SVD, measuring how many dimensions the model actively uses.
+
+W&B metrics:
+- `collapse_monitor/effective_rank`: effective rank (≥ 1.0)
+- `collapse_monitor/num_svd_samples`: number of samples used for the SVD estimate
+
+Interpretation:
+- **Healthy**: effective rank ≈ 50–500+ (representations spread across many dimensions)
+- **Soft collapse warning**: effective rank < 10
+- **Hard collapse**: effective rank < 2 (near-rank-1 — all samples map to a line)
+
+Troubleshooting:
+1. Effective rank near 1 from epoch 1 → model may not be learning; check loss is decreasing
+2. Effective rank drops mid-training → potential collapse; cross-reference with teacher entropy and gram matrix
+3. `num_svd_samples` is very low → increase `max_buffer_samples` or check DDP gather is working
 
 ## Data Preparation
 
