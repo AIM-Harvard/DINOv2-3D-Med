@@ -38,7 +38,7 @@ class DINOv2_3D_LightningModule(LightningModule):
         batch_size_per_device: int,
         hidden_size: int = 768,
         ibot_separate_head: bool = True,
-        base_lr: float = 0.0005,  # Reduced from 0.004 as per issue #6
+        base_lr: float = 0.004,  # Reference LR at effective batch size 1024
         min_lr: float = 1e-6,
         weight_decay: float = 0.04,
         layer_decay: float = 0.9,
@@ -142,11 +142,14 @@ class DINOv2_3D_LightningModule(LightningModule):
         return self.model(x)
 
     def configure_optimizers(self):
-        # Calculate learning rate based on batch size
-        lr_scale = math.sqrt(
-            self.batch_size_per_device * self.trainer.world_size / 1024
+        # Scale LR by effective batch size relative to reference batch size of 1024.
+        # Effective batch = per-device batch × num devices × grad accumulation steps.
+        effective_batch_size = (
+            self.batch_size_per_device
+            * self.trainer.world_size
+            * self.trainer.accumulate_grad_batches
         )
-        lr = self.base_lr * lr_scale
+        lr = self.base_lr * math.sqrt(effective_batch_size / 1024)
         num_layers = len(self.model.student_backbone.vit.blocks)
 
         def lr_layer(layer_idx: int) -> float:

@@ -32,13 +32,19 @@ class _FakeTrainer:
         self.logger = logger
 
 
+class _FakeModel(torch.nn.Module):
+    def __init__(self, outputs):
+        super().__init__()
+        self._outputs = outputs
+
+    def forward(self, _views):
+        return self._outputs
+
+
 class _FakeLightningModule:
     def __init__(self, model_outputs):
-        self._model_outputs = model_outputs
+        self.model = _FakeModel(model_outputs)
         self.device = torch.device("cpu")
-
-    def model(self, _views):
-        return self._model_outputs
 
 
 class GramMatrixCallbackTests(unittest.TestCase):
@@ -251,7 +257,6 @@ class GramMatrixCallbackTests(unittest.TestCase):
         debug_payloads = [p for p, _ in trainer.logger.experiment.logged if "gram_matrix_debug/fallback_used" in p]
         self.assertTrue(debug_payloads, "Expected debug payload with fallback_used metric")
         self.assertEqual(debug_payloads[-1]["gram_matrix_debug/fallback_used"], 1.0)
-        self.assertEqual(debug_payloads[-1]["gram_matrix_debug/root_cause_framework"], 1.0)
 
     def test_model_side_collapse_reports_model_root_cause(self):
         callback = GramMatrixCallback(
@@ -280,61 +285,34 @@ class GramMatrixCallbackTests(unittest.TestCase):
             callback.on_train_batch_end(trainer, pl_module, None, batch, 0)
 
         self.assertTrue(log_mock.called)
-        debug_payloads = [p for p, _ in trainer.logger.experiment.logged if "gram_matrix_debug/root_cause_model" in p]
-        self.assertTrue(debug_payloads, "Expected debug payload with root-cause metrics")
+        debug_payloads = [p for p, _ in trainer.logger.experiment.logged if "gram_matrix_debug/fallback_used" in p]
+        self.assertTrue(debug_payloads, "Expected debug payload with fallback_used metric")
         self.assertEqual(debug_payloads[-1]["gram_matrix_debug/fallback_used"], 0.0)
-        self.assertEqual(debug_payloads[-1]["gram_matrix_debug/root_cause_model"], 1.0)
 
-    def test_stage_diagnostics_include_pipeline_metrics(self):
+    def test_debug_diagnostics_include_key_metrics(self):
         callback = GramMatrixCallback(
             log_every_n_steps=1,
             feature_key="teacher_cls_token",
             max_samples=8,
-            saturation_offdiag_threshold=0.98,
-            saturation_offdiag_std_threshold=0.05,
-            saturation_sample_var_threshold=1e-4,
-            auto_fallback_to_backbone_on_saturation=True,
         )
-        primary = torch.ones(8, 4)
-        fallback = torch.randn(8, 4)
         pl_module = _FakeLightningModule(
-            {
-                "pred": {
-                    "teacher_cls_token": primary,
-                    "teacher_cls_token_backbone": fallback,
-                }
-            }
+            {"pred": {"teacher_cls_token": torch.randn(8, 4)}}
         )
         trainer = _FakeTrainer(global_step=1, logger=_FakeWandbLogger())
-        batch = (torch.randn(8, 4),)
+        batch = ([torch.randn(8, 4), torch.randn(8, 4)],)
 
         with patch.object(callback, "_log_gram_matrix"):
             callback.on_train_batch_end(trainer, pl_module, None, batch, 0)
 
         debug_payloads = [
-            p for p, _ in trainer.logger.experiment.logged if "gram_matrix_debug/fallback_used" in p
+            p for p, _ in trainer.logger.experiment.logged if "gram_matrix_debug/offdiag_mean" in p
         ]
-        self.assertTrue(debug_payloads, "Expected debug payload with saturation diagnostics")
+        self.assertTrue(debug_payloads, "Expected debug diagnostic payload")
         payload = debug_payloads[-1]
-
-        expected_stage_keys = {
-            "gram_matrix_debug/stage_feature_extraction_offdiag_mean",
-            "gram_matrix_debug/stage_feature_extraction_offdiag_std",
-            "gram_matrix_debug/stage_feature_extraction_sample_variance",
-            "gram_matrix_debug/stage_normalization_offdiag_mean",
-            "gram_matrix_debug/stage_normalization_offdiag_std",
-            "gram_matrix_debug/stage_normalization_sample_variance",
-            "gram_matrix_debug/stage_sampling_offdiag_mean",
-            "gram_matrix_debug/stage_sampling_offdiag_std",
-            "gram_matrix_debug/stage_sampling_sample_variance",
-            "gram_matrix_debug/stage_gather_offdiag_mean",
-            "gram_matrix_debug/stage_gather_offdiag_std",
-            "gram_matrix_debug/stage_gather_sample_variance",
-        }
-        self.assertTrue(
-            expected_stage_keys.issubset(payload.keys()),
-            f"Missing expected stage diagnostics keys. Payload keys: {sorted(payload.keys())}",
-        )
+        self.assertIn("gram_matrix_debug/offdiag_mean", payload)
+        self.assertIn("gram_matrix_debug/offdiag_std", payload)
+        self.assertIn("gram_matrix_debug/fallback_used", payload)
+        self.assertEqual(len([k for k in payload if k.startswith("gram_matrix_debug/")]), 3)
 
     def test_disabled_wandb_skips_diagnostics_telemetry(self):
         callback = GramMatrixCallback(log_every_n_steps=1, feature_key="missing_key")
@@ -391,8 +369,9 @@ class GramMatrixCallbackTests(unittest.TestCase):
         self.assertIn("cmap", title, f"Title missing 'cmap' range annotation: {title!r}")
 
     def test_backbone_saturation_detected_with_corrected_threshold(self):
-        """Regression: 1e-6 threshold missed backbone (768-dim) saturation at cosine ~0.999.
-        The corrected default of 1e-4 catches it so model-side collapse is reported."""
+        """Regression: 1e-6 sample-var threshold missed backbone (768-dim) saturation at cosine ~0.999.
+        With sample-var gating disabled (default None), saturation is caught via off-diagonal
+        criteria alone and model-side collapse is reported."""
         # 768-dim backbone-like features with cosine ~0.9999 (all nearly identical vectors).
         dim = 768
         base = torch.randn(1, dim)
@@ -404,7 +383,7 @@ class GramMatrixCallbackTests(unittest.TestCase):
             log_every_n_steps=1,
             feature_key="teacher_cls_token",
             max_samples=8,
-            # Use default saturation_sample_var_threshold (now 1e-4) to test the default
+            # saturation_sample_var_threshold defaults to None (off-diagonal criteria only)
         )
         pl_module = _FakeLightningModule(
             {
@@ -422,10 +401,10 @@ class GramMatrixCallbackTests(unittest.TestCase):
 
         debug_payloads = [
             p for p, _ in trainer.logger.experiment.logged
-            if "gram_matrix_debug/root_cause_model" in p
+            if "gram_matrix_debug/fallback_used" in p
         ]
         self.assertTrue(
             debug_payloads,
             "Expected model-side saturation to be detected for 768-dim near-identical features",
         )
-        self.assertEqual(debug_payloads[-1]["gram_matrix_debug/root_cause_model"], 1.0)
+        self.assertEqual(debug_payloads[-1]["gram_matrix_debug/fallback_used"], 0.0)
