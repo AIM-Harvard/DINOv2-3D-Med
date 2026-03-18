@@ -169,37 +169,12 @@ class GramMatrixCallback(Callback):
             return
         
         try:
-            stage_metrics = self._build_stage_metrics(
-                stage_name="feature_extraction", features=features
-            )
             primary_normalized = self._prepare_features_for_gram(features, trainer)
-            stage_metrics.update(
-                self._build_stage_metrics(
-                    stage_name="normalization", features=F.normalize(features, dim=-1, p=2)
-                )
-            )
-            stage_metrics.update(
-                self._build_stage_metrics(
-                    stage_name="sampling",
-                    features=self._sample_features_for_stage(
-                        F.normalize(features, dim=-1, p=2),
-                        trainer=trainer,
-                    ),
-                )
-            )
-            stage_metrics.update(
-                self._build_stage_metrics(
-                    stage_name="gather", features=primary_normalized
-                )
-            )
             gram_matrix = torch.matmul(primary_normalized, primary_normalized.T)
             primary_stats = self._compute_saturation_stats(gram_matrix, primary_normalized)
 
             fallback_used = 0.0
-            root_cause_framework = 0.0
-            root_cause_model = 0.0
-            root_cause_unknown = 0.0
-
+            active_stats = primary_stats
             if self._is_saturated(primary_stats):
                 fallback_key = self._fallback_feature_key_for(self.feature_key)
                 if (
@@ -219,8 +194,8 @@ class GramMatrixCallback(Callback):
 
                     if not self._is_saturated(fallback_stats):
                         gram_matrix = fallback_gram
+                        active_stats = fallback_stats
                         fallback_used = 1.0
-                        root_cause_framework = 1.0
                         if trainer.global_rank == 0:
                             logging.warning(
                                 "Gram-matrix saturation detected on '%s'; using '%s' fallback.",
@@ -228,7 +203,6 @@ class GramMatrixCallback(Callback):
                                 fallback_key,
                             )
                     else:
-                        root_cause_model = 1.0
                         if trainer.global_rank == 0:
                             logging.warning(
                                 "Gram-matrix saturation persists on both '%s' and '%s'; likely model-side collapse.",
@@ -236,7 +210,6 @@ class GramMatrixCallback(Callback):
                                 fallback_key,
                             )
                 else:
-                    root_cause_unknown = 1.0
                     if trainer.global_rank == 0:
                         logging.warning(
                             "Gram-matrix saturation detected on '%s' with no available backbone fallback.",
@@ -246,14 +219,9 @@ class GramMatrixCallback(Callback):
             self._report_debug_diagnostics(
                 trainer,
                 {
-                    "gram_matrix_debug/offdiag_mean": primary_stats["offdiag_mean"],
-                    "gram_matrix_debug/offdiag_std": primary_stats["offdiag_std"],
-                    "gram_matrix_debug/sample_variance": primary_stats["sample_variance"],
+                    "gram_matrix_debug/offdiag_mean": active_stats["offdiag_mean"],
+                    "gram_matrix_debug/offdiag_std": active_stats["offdiag_std"],
                     "gram_matrix_debug/fallback_used": fallback_used,
-                    "gram_matrix_debug/root_cause_framework": root_cause_framework,
-                    "gram_matrix_debug/root_cause_model": root_cause_model,
-                    "gram_matrix_debug/root_cause_unknown": root_cause_unknown,
-                    **stage_metrics,
                 },
             )
 
@@ -461,32 +429,6 @@ class GramMatrixCallback(Callback):
             features_normalized = features_normalized[indices]
         return features_normalized
 
-    def _sample_features_for_stage(self, features_normalized: torch.Tensor, trainer) -> torch.Tensor:
-        """Apply pre-gather and global sample capping without distributed collectives."""
-        sampled = features_normalized
-        world_size = trainer.world_size if dist.is_available() and dist.is_initialized() else 1
-        if world_size > 1:
-            per_rank_max = max(1, math.ceil(self.max_samples / world_size))
-            if sampled.shape[0] > per_rank_max:
-                indices = torch.linspace(
-                    0,
-                    sampled.shape[0] - 1,
-                    per_rank_max,
-                    dtype=torch.long,
-                    device=sampled.device,
-                )
-                sampled = sampled[indices]
-        if sampled.shape[0] > self.max_samples:
-            indices = torch.linspace(
-                0,
-                sampled.shape[0] - 1,
-                self.max_samples,
-                dtype=torch.long,
-                device=sampled.device,
-            )
-            sampled = sampled[indices]
-        return sampled
-
     def _snapshot_training_states(self, module: torch.nn.Module) -> Dict[torch.nn.Module, bool]:
         """Capture training flags for a module tree so they can be restored exactly."""
         return {submodule: submodule.training for submodule in module.modules()}
@@ -609,29 +551,6 @@ class GramMatrixCallback(Callback):
             if isinstance(logger, wandb_logger_type):
                 return logger
         return None
-
-    def _build_stage_metrics(self, stage_name: str, features: torch.Tensor) -> dict:
-        """Build stable stage-level telemetry metrics from features.
-
-        Args:
-            stage_name: Label for this pipeline stage.
-            features: Feature tensor to analyse.
-        """
-        if features is None or not hasattr(features, "dim") or features.dim() != 2:
-            stats = {
-                "offdiag_mean": 0.0,
-                "offdiag_std": 0.0,
-                "sample_variance": 0.0,
-            }
-        else:
-            gram_features = F.normalize(features, dim=-1, p=2)
-            gram = torch.matmul(gram_features, gram_features.T)
-            stats = self._compute_saturation_stats(gram, gram_features)
-        return {
-            f"gram_matrix_debug/stage_{stage_name}_offdiag_mean": stats["offdiag_mean"],
-            f"gram_matrix_debug/stage_{stage_name}_offdiag_std": stats["offdiag_std"],
-            f"gram_matrix_debug/stage_{stage_name}_sample_variance": stats["sample_variance"],
-        }
 
     def _is_wandb_disabled(self) -> bool:
         disabled = str(os.environ.get("WANDB_DISABLED", "")).strip().lower()
