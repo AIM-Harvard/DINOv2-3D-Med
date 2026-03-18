@@ -12,6 +12,7 @@ trainer:
   accelerator: gpu
   strategy: ddp_find_unused_parameters_true
   enable_model_summary: False
+  accumulate_grad_batches: 4
   log_every_n_steps: 10
   limit_train_batches: 250
   fast_dev_run: False
@@ -40,18 +41,25 @@ trainer:
       saturation_offdiag_std_threshold: 0.01
       saturation_sample_var_threshold: null
       auto_fallback_to_backbone_on_saturation: true
+    - _target_: project.callbacks.TeacherEntropyCallback
+      log_every_n_steps: "%trainer#log_every_n_steps"
+      max_samples: 128
+    - _target_: project.callbacks.EffectiveRankCallback
+      log_every_n_steps: "%trainer#log_every_n_steps"
+      feature_key: "student_cls_token"
+      max_buffer_samples: 512
 
 lightning_module:
     _target_: project.training.DINOv2_3D_LightningModule
     batch_size_per_device: "@data_module#batch_size"
     hidden_size: "%hidden_size"
     ibot_separate_head: True
-    base_lr: 0.00001
+    base_lr: 0.004
     layer_decay: 0.9
     gradient_clip_val: 3.0
     teacher_temp_warmup_epochs: "$int(@trainer#max_epochs * 0.3)"
-    teacher_temp_min: 0.005
-    teacher_temp_max: 0.01
+    teacher_temp_min: 0.04
+    teacher_temp_max: 0.07
     freeze_last_layer_epochs: 1
     projection_dim: 32768  # reduced projection dim (was 131072), less memory
     weight_decay: 0.04
