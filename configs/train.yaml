@@ -12,8 +12,8 @@ trainer:
   accelerator: gpu
   strategy: ddp_find_unused_parameters_true
   enable_model_summary: False
-  accumulate_grad_batches: 4
-  log_every_n_steps: 10
+  accumulate_grad_batches: 6
+  log_every_n_steps: 50
   limit_train_batches: 250
   fast_dev_run: False
   num_sanity_val_steps: 0
@@ -57,18 +57,18 @@ lightning_module:
     base_lr: 0.004
     layer_decay: 0.9
     gradient_clip_val: 3.0
-    teacher_temp_warmup_epochs: "$int(@trainer#max_epochs * 0.3)"
+    teacher_temp_warmup_epochs: "$int(@trainer#max_epochs * 0.5)"
     teacher_temp_min: 0.04
     teacher_temp_max: 0.07
     freeze_last_layer_epochs: 1
-    projection_dim: 32768  # reduced projection dim (was 131072), less memory
+    projection_dim: 65536  # reduced projection dim (was 131072), less memory
     weight_decay: 0.04
     backbone:
 
 data_module:
   _target_: project.training.DataModule
   num_workers: 6     # reduce to save host RAM (if needed)
-  batch_size: 4     # lower batch for reduced GPU memory, can adjust up if fits
+  batch_size: 5     # lower batch for reduced GPU memory, can adjust up if fits
   pin_memory: True
   drop_last: True
   train_dataset:
@@ -114,7 +114,7 @@ data_module:
               global_view_scale: [0.3, 1.0]
               global_view_size: "$@img_size[0]"
               local_view_scale: [0.3, 1.0]
-              local_view_size: [48, 48, 48]
+              local_view_size: [24, 24, 24]
               num_local_views: 4
             - _target_: torchvision.transforms.Lambda
               lambd: "$lambda x: (x, False)" # Incase you need labels.

@@ -5,6 +5,7 @@ Includes teacher/student ViT, DINO/iBOT heads, and update/cancel logic.
 
 import copy
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from lightly.models.modules import DINOProjectionHead
@@ -19,6 +20,26 @@ from transforms.blockmask import RandomBlockMask3D
 #     https://github.com/lightly-ai/lightly/blob/master/benchmarks/imagenet/vitb16/dinov2.py
 
 
+class DINOProjectionHeadFP16Safe(DINOProjectionHead):
+    """
+    DINO projection head with fp16-safe normalization epsilon.
+
+    Lightly's DINOProjectionHead uses PyTorch's default eps=1e-12 in F.normalize,
+    which is below fp16's minimum positive value (~6e-8). This can cause inf/NaN
+    during mixed precision training. Official DINOv2 uses eps=1e-6 for stability.
+
+    See: https://www.lightly.ai/blog/dinov2-reproduction (Bug 2)
+    """
+
+    def forward(self, x):
+        """Forward pass with fp16-safe normalization."""
+        x = self.layers(x)
+        # Use larger epsilon for fp16 stability (matches official DINOv2)
+        x = F.normalize(x, dim=-1, p=2, eps=1e-6)
+        x = self.last_layer(x)
+        return x
+
+
 def freeze_eval_module(module: nn.Module) -> None:
     """Freeze the parameters of a module."""
     for param in module.parameters():
@@ -30,29 +51,53 @@ def freeze_eval_module(module: nn.Module) -> None:
 class DINOHead(nn.Module):
     """A wrapper for the DINO projection head."""
 
-    def __init__(self, dino_head: nn.Module) -> None:
+    def __init__(self, dino_head: nn.Module, freeze_last_layer_epochs: int = 0) -> None:
         super().__init__()
         self._dino_head = dino_head
+        self.freeze_last_layer_epochs = freeze_last_layer_epochs
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._dino_head(x)
 
-    def cancel_last_layer_gradients(self, current_epoch: int) -> None:
-        self._dino_head.cancel_last_layer_gradients(current_epoch)
+    def zero_last_layer_lr(self, optimizer: torch.optim.Optimizer, current_epoch: int) -> None:
+        """
+        Zero learning rate for the last layer during warmup (DINOv2 mechanism).
+
+        DINOv2 uses LR zeroing instead of gradient-zeroing (DINOv1) to preserve
+        optimizer state. See: https://www.lightly.ai/blog/dinov2-reproduction (Bug 4)
+        """
+        if current_epoch >= self.freeze_last_layer_epochs:
+            return
+
+        # Find the last layer parameter and set its LR to 0
+        for group in optimizer.param_groups:
+            for name, param in self._dino_head.named_parameters():
+                if param is group["params"][0] and "last_layer" in name:
+                    group["lr"] = 0.0
+                    break
 
 
 class IBOTHead(nn.Module):
     """A wrapper for the iBOT projection head."""
 
-    def __init__(self, ibot_head: nn.Module) -> None:
+    def __init__(self, ibot_head: nn.Module, freeze_last_layer_epochs: int = 0) -> None:
         super().__init__()
         self._ibot_head = ibot_head
+        self.freeze_last_layer_epochs = freeze_last_layer_epochs
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._ibot_head(x)
 
-    def cancel_last_layer_gradients(self, current_epoch: int) -> None:
-        self._ibot_head.cancel_last_layer_gradients(current_epoch)
+    def zero_last_layer_lr(self, optimizer: torch.optim.Optimizer, current_epoch: int) -> None:
+        """Zero learning rate for the last layer during warmup (DINOv2 mechanism)."""
+        if current_epoch >= self.freeze_last_layer_epochs:
+            return
+
+        for group in optimizer.param_groups:
+            for name, param in self._ibot_head.named_parameters():
+                if param is group["params"][0] and "last_layer" in name:
+                    group["lr"] = 0.0
+                    break
 
 
 class DINOv2_3D_Meta_Architecture(nn.Module):
@@ -66,7 +111,7 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
         hidden_size: int = 768,
         norm_last_layer: bool = False,
         ibot_separate_head: bool = True,
-        freeze_last_layer: int = -1,
+        freeze_last_layer_epochs: int = 0,
         projection_dim: int = 65536,
         backbone: nn.Module = None,
     ):
@@ -78,19 +123,20 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
 
         self.norm_last_layer = norm_last_layer
         self.ibot_separate_head = ibot_separate_head
+        self.freeze_last_layer_epochs = freeze_last_layer_epochs
 
         self.hidden_size = hidden_size
         self.teacher_backbone = backbone
         # Freeze teacher backbone
         freeze_eval_module(self.teacher_backbone)
 
-        # DINO head
-        teacher_dino_head = DINOProjectionHead(
+        # DINO head - use fp16-safe version
+        teacher_dino_head = DINOProjectionHeadFP16Safe(
             input_dim=self.hidden_size,
             output_dim=projection_dim,
             norm_last_layer=norm_last_layer,
         )
-        self.teacher_dino_head = DINOHead(teacher_dino_head)
+        self.teacher_dino_head = DINOHead(teacher_dino_head, freeze_last_layer_epochs=0)
         freeze_eval_module(self.teacher_dino_head)
 
         # Student components
@@ -100,32 +146,29 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
             param.requires_grad = True
         self.student_backbone.train()
 
-        student_dino_head = DINOProjectionHead(
+        student_dino_head = DINOProjectionHeadFP16Safe(
             input_dim=self.hidden_size,
             output_dim=projection_dim,
-            freeze_last_layer=freeze_last_layer,
             norm_last_layer=norm_last_layer,
         )
-        self.student_dino_head = DINOHead(student_dino_head)
+        self.student_dino_head = DINOHead(student_dino_head, freeze_last_layer_epochs)
 
         # iBOT heads - separate or shared
         if ibot_separate_head:
-            teacher_ibot_head = DINOProjectionHead(
+            teacher_ibot_head = DINOProjectionHeadFP16Safe(
                 input_dim=self.hidden_size,
                 output_dim=projection_dim,
-                freeze_last_layer=freeze_last_layer,
                 norm_last_layer=norm_last_layer,
             )
-            self.teacher_ibot_head = IBOTHead(teacher_ibot_head)
+            self.teacher_ibot_head = IBOTHead(teacher_ibot_head, freeze_last_layer_epochs=0)
             freeze_eval_module(self.teacher_ibot_head)
 
-            student_ibot_head = DINOProjectionHead(
+            student_ibot_head = DINOProjectionHeadFP16Safe(
                 input_dim=self.hidden_size,
                 output_dim=projection_dim,
-                freeze_last_layer=freeze_last_layer,
                 norm_last_layer=norm_last_layer,
             )
-            self.student_ibot_head = IBOTHead(student_ibot_head)
+            self.student_ibot_head = IBOTHead(student_ibot_head, freeze_last_layer_epochs)
         else:
             self.teacher_ibot_head = self.teacher_dino_head
             self.student_ibot_head = self.student_dino_head
@@ -157,11 +200,16 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
         if self.ibot_separate_head:
             update_momentum(self.student_ibot_head, self.teacher_ibot_head, m=momentum)
 
-    def cancel_last_layer_gradients(self, current_epoch: int) -> None:
-        """Cancel gradients in the last layer during warmup."""
-        self.student_dino_head.cancel_last_layer_gradients(current_epoch)
+    def cancel_last_layer_gradients(self, optimizer: torch.optim.Optimizer, current_epoch: int) -> None:
+        """
+        Zero learning rate for last layer during warmup (DINOv2 mechanism).
+
+        Note: Method name kept for compatibility, but now uses LR zeroing
+        instead of gradient-zeroing to preserve optimizer state.
+        """
+        self.student_dino_head.zero_last_layer_lr(optimizer, current_epoch)
         if self.ibot_separate_head:
-            self.student_ibot_head.cancel_last_layer_gradients(current_epoch)
+            self.student_ibot_head.zero_last_layer_lr(optimizer, current_epoch)
 
     def forward(self, views: list[torch.Tensor]):
         """
@@ -245,7 +293,7 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
             "n_local_views": torch.tensor(len(views) - 2, device=device),
         }
 
-        return {"pred": out}
+        return out
 
     def encode(self, x: torch.Tensor):
         """

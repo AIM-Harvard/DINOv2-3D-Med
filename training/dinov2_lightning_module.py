@@ -74,6 +74,7 @@ class DINOv2_3D_LightningModule(LightningModule):
             hidden_size=hidden_size,
             norm_last_layer=False,
             ibot_separate_head=ibot_separate_head,
+            freeze_last_layer_epochs=freeze_last_layer_epochs,
             projection_dim=projection_dim,
             backbone=backbone,
         )
@@ -119,7 +120,7 @@ class DINOv2_3D_LightningModule(LightningModule):
 
         # Calculate losses with proper scheduling
         loss_dict = self.criterion(
-            outputs["pred"], global_step=self.trainer.global_step
+            outputs, global_step=self.trainer.global_step
         )
 
         # Log losses
@@ -265,7 +266,8 @@ class DINOv2_3D_LightningModule(LightningModule):
 
     def on_before_optimizer_step(self, optimizer: AdamW, *args) -> None:
         # Cancel last layer gradients during warmup (issue #5)
-        self.model.cancel_last_layer_gradients(self.current_epoch)
+        # Note: now uses LR zeroing (DINOv2 mechanism) instead of gradient-zeroing
+        self.model.cancel_last_layer_gradients(optimizer, self.current_epoch)
 
         # Apply weight decay schedule
         weight_decay = cosine_schedule(

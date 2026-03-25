@@ -79,7 +79,7 @@ class DINOv2Loss(nn.Module):
             "student_cls_out": Tensor,
             "teacher_mask_patches": Tensor (optional),
             "student_mask_glob_patches": Tensor (optional),
-            "student_glob_cls_token": Tensor (optional),
+            "student_glob_cls_token_backbone": Tensor (optional),
             "mask": Tensor (optional, for patch loss),
             "n_local_views": int (optional, number of local views)
         }
@@ -90,7 +90,7 @@ class DINOv2Loss(nn.Module):
         student_outputs = input_dict.get("student_cls_token", None)
         teacher_patches = input_dict.get("teacher_patch_tokens", None)
         student_patches = input_dict.get("student_patch_tokens", None)
-        student_glob_cls_token = input_dict.get("student_glob_cls_token", None)
+        student_glob_cls_token = input_dict.get("student_glob_cls_token_backbone", None)
         mask = input_dict.get("mask", None)
         n_local_views = input_dict.get("n_local_views", 0)
 
