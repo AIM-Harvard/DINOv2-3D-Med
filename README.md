@@ -13,13 +13,11 @@ A configuration-first (and therefore easily understandable and trackable) reposi
 
 ## Features
 - DINOv2-style self-supervised learning with teacher-student EMA framework
-- DINOv3-style Gram anchoring loss for spatial coherence (stage-aware training)
 - Multiple 3D backbone architectures: PRIMUS, EVA, and MONAI ViT
 - Block masking for 3D volumes (iBOT-style masked patch prediction)
 - Flexible 3D augmentations (global/local views) courtesy of MONAI
 - FP16-safe projection heads (fixes known numerical instability in mixed precision)
 - Layer-wise learning rate decay and weight decay scheduling
-- Multimodal pretraining support (vision + text alignment)
 - Three collapse monitoring callbacks (Gram matrix, entropy, effective rank)
 - PyTorch Lightning training loop with DDP support
 - YAML-based experiment configuration that is explainable at a glance due to its abstraction!
@@ -36,28 +34,22 @@ DINOv2-3D-Med/
 ├── configs/                 # Composable YAML configuration files
 │   ├── train.yaml           # Main training config
 │   ├── predict.yaml         # Inference config
-│   ├── dinotxt_stage.yaml   # Multimodal training config
 │   ├── models/              # Backbone configs (primus.yaml, vit.yaml)
 │   └── datasets/            # Dataset configs (amos.yaml, idc_dump.yaml)
 ├── losses/                  # Loss functions
 │   ├── dino.py              # DINOv2 loss (DINO + iBOT + KoLeo)
-│   ├── dinov3.py            # DINOv3 loss (+ Gram anchoring)
-│   ├── ibot_patch_3d.py     # 3D masked patch prediction loss
-│   └── image_text_alignment.py  # Multimodal alignment loss
+│   └── ibot_patch_3d.py     # 3D masked patch prediction loss
 ├── models/                  # Model architectures
 │   ├── meta_arch.py         # Teacher-student meta-architecture
-│   ├── multimodal_meta_arch.py  # Multimodal meta-architecture
 │   ├── dynamic_utils.py     # Dynamic backbone utilities
 │   ├── rope.py              # 3D Rotary position embeddings
-│   └── backbones/           # Vision & text backbone implementations
+│   └── backbones/           # Vision backbone implementations
 │       ├── primus.py        # PRIMUS lightweight 3D transformer
 │       ├── eva.py           # EVA large-scale transformer
 │       ├── masked_vit_wrapper.py  # MONAI ViT wrapper with masking
-│       ├── vision_enc_wrapper.py  # Generic vision encoder wrapper
-│       └── text_encoder.py  # CLIP-based text encoder
+│       └── vision_enc_wrapper.py  # Generic vision encoder wrapper
 ├── training/                # PyTorch Lightning modules
 │   ├── dinov2_lightning_module.py  # DINOv2 LightningModule
-│   ├── dinotxt_lightning_module.py # Multimodal LightningModule
 │   └── data_module.py       # DataModule for train/val/test/predict
 ├── transforms/              # Data augmentation pipelines
 │   ├── dinov2_aug.py        # 3D global/local view augmentation
@@ -116,7 +108,6 @@ All experiment settings (model, trainer, data) are defined in composable YAML co
 |--------|---------|
 | `configs/train.yaml` | Main training setup (trainer, LR, loss, callbacks, augmentations) |
 | `configs/predict.yaml` | Inference / feature extraction setup |
-| `configs/dinotxt_stage.yaml` | Multimodal (vision + text) training |
 | `configs/models/primus.yaml` | PRIMUS backbone configuration |
 | `configs/models/vit.yaml` | MONAI ViT backbone configuration |
 | `configs/datasets/amos.yaml` | AMOS dataset paths |
@@ -158,19 +149,7 @@ python -m scripts.run fit --config_file=./configs/train.yaml,./configs/models/vi
 | Loss | Module | Description |
 |------|--------|-------------|
 | **DINOv2Loss** | `losses/dino.py` | Combined DINO (CLS token contrastive) + iBOT (masked patch prediction) + KoLeo (diversity regularization) with dynamic teacher temperature warmup. |
-| **DINOv3Loss** | `losses/dinov3.py` | Extends DINOv2Loss with Gram anchoring for spatial coherence. Stage-aware: pretrain → gram_anchor → high_res. Based on [arXiv:2508.10104](https://arxiv.org/abs/2508.10104). |
 | **IBOTPatchLoss3D** | `losses/ibot_patch_3d.py` | Patch-level masked prediction loss adapted for 3D volumes. |
-| **ImageTextAlignmentLoss** | `losses/image_text_alignment.py` | Contrastive alignment loss for multimodal (vision + text) pretraining. |
-
-To use DINOv3Loss instead of DINOv2Loss, specify it as the criterion in your config:
-```yaml
-lightning_module:
-  criterion:
-    _target_: project.losses.dinov3.DINOv3Loss
-    gram_loss_weight: 0.1
-    training_stage: "gram_anchor"
-    # ... other DINOv2Loss params carry over
-```
 
 ### Training Details
 
@@ -317,7 +296,6 @@ This allows nnUNet to automatically adapt the pretrained weights to the downstre
 ## References
 - [Lightly](https://github.com/lightly-ai/lightly)
 - [DINOv2 (Facebook Research)](https://github.com/facebookresearch/dinov2)
-- [DINOv3 (arXiv:2508.10104)](https://arxiv.org/abs/2508.10104)
 - [MONAI (Medical Open Network for AI)](https://github.com/Project-MONAI/MONAI)
 - [PyTorch Lightning](https://www.pytorchlightning.ai/)
 - [Dynamic Network Architectures / PRIMUS](https://github.com/MIC-DKFZ/dynamic-network-architectures)
