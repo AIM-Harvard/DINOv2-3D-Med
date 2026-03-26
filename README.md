@@ -5,14 +5,10 @@
 A configuration-first (and therefore easily understandable and trackable) repository for a 3D implementation of DINOv2. Based on the implementations from Lightly (Thank you!) and integrated with PyTorch Lightning. 3D capabilities of this implementation are largely through MONAI's functionalities.
 
 ## What you can do with this Repo
-- Train your own 3D DINOv2 on CT, MRI, PET data, etc. with very little configuration other than what's been provided.
-- Use state of the art PRIMUS transformer in medical segmentation to pretrain your DINOv2.
-- Swap in different backbones (PRIMUS, EVA, MONAI ViT) via config files — no code changes needed.
-- Extend to DINOv3-style Gram anchoring for improved spatial coherence.
-- Run multimodal (vision + text) pretraining with a CLIP-based text encoder.
-- Export pretrained checkpoints to nnUNet format for downstream segmentation tasks.
-- Monitor training health with three built-in collapse detection callbacks.
-- Make a baseline for DINOv2 to improve and build on.
+- Train your own 3D Dinov2 on CT, MRI, PET data, etc. with very little configuration other than whats been provided. 
+- Use state of the art PRIMUS transformer in medical segmentation to pretrain your DINOV2
+- Debug DINO training with built-in collapse monitoring callbacks (Gram matrix, entropy, effective rank)
+- Make a baseline for DinoV2 to improve and build on.
 - Change elements of the framework through modular extensions.
 
 ## Features
@@ -113,14 +109,6 @@ python -m scripts.run fit \
   --lightning_module#base_lr=0.002
 ```
 
-### Prediction / Inference
-Run inference with a trained checkpoint using the prediction config:
-```bash
-python -m scripts.run predict --config_file=./configs/predict.yaml,./configs/models/primus.yaml,./configs/datasets/amos.yaml
-```
-
-The `predict.yaml` config sets up the model in inference mode using `model.encode()` to extract CLS token features from input volumes.
-
 ### Configuration
 All experiment settings (model, trainer, data) are defined in composable YAML configs using MONAI's `ConfigParser`:
 
@@ -194,16 +182,6 @@ The Lightning module (`training/dinov2_lightning_module.py`) implements several 
 - **Last layer LR zeroing**: During warmup, the last projection layer's LR is set to zero (DINOv2 mechanism, preserves optimizer state unlike gradient-zeroing)
 - **Gradient clipping**: Norm-based clipping at 3.0
 - **Cosine warmup scheduler**: 10-epoch warmup → cosine annealing to `min_lr`
-
-### Multimodal Training
-
-For vision-language pretraining, use `configs/dinotxt_stage.yaml` with the `DINOtxt_LightningModule`:
-
-```bash
-python -m scripts.run fit --config_file=./configs/dinotxt_stage.yaml,./configs/datasets/amos.yaml
-```
-
-This combines the PRIMUS vision backbone with a CLIP-based text encoder (`openai/clip-vit-base-patch32`) for image-text alignment learning. The text encoder can be frozen or fine-tuned.
 
 ### Collapse Monitoring Callbacks
 
@@ -288,7 +266,7 @@ The default training pipeline applies the following MONAI transforms in sequence
 
 ## Exporting Checkpoints to nnUNet
 
-A utility script converts Lightning checkpoints to the format expected by nnUNet for downstream segmentation:
+A utility script converts Lightning checkpoints to the format expected by the [nnUNet nnssl fork](https://github.com/TaWald/nnUNet) for downstream segmentation:
 
 ```bash
 python scripts/utility/export_ckpt_to_nnunet.py \
@@ -299,7 +277,42 @@ python scripts/utility/export_ckpt_to_nnunet.py \
   --pretrain-spacing 1.0 1.0 1.0
 ```
 
-This extracts the student backbone weights, renames keys from `vit` → `eva` naming, optionally removes the CLS token from positional embeddings, and wraps everything in the `nnssl_adaptation_plan` metadata that nnUNet expects. See `--help` for all options.
+The script:
+1. Extracts **student backbone** weights from the Lightning checkpoint
+2. Renames keys from `vit` → `eva` naming convention
+3. Optionally removes the CLS token from positional embeddings (default: yes)
+4. Wraps everything in the `nnssl_adaptation_plan` metadata structure
+
+### nnssl Adaptation Plan
+
+The exported checkpoint includes an `nnssl_adaptation_plan` that tells nnUNet how to load the pretrained encoder. The plan maps pretrained components to the downstream architecture:
+
+```python
+{
+    "network_weights": state_dict,       # Pretrained student backbone weights
+    "nnssl_adaptation_plan": {
+        "pretrain_plan": {               # Pretraining configuration
+            "configurations": {
+                "3d_fullres": {
+                    "spacing": [1.0, 1.0, 1.0],
+                    "patch_size": [96, 96, 96],
+                }
+            }
+        },
+        "architecture_plans": {
+            "arch_class_name": "PrimusM",  # Downstream architecture class
+        },
+        "key_to_encoder": "eva",           # Prefix for encoder weights
+        "key_to_stem": "down_projection",  # Prefix for stem/patch-embed weights
+        "keys_to_in_proj": ["down_projection.proj"],  # Input projection layer keys
+        "key_to_lpe": "eva.pos_embed",     # Learnable position embedding key
+        "pretrain_num_input_channels": 1,
+        "recommended_downstream_patchsize": [96, 96, 96],
+    }
+}
+```
+
+This allows nnUNet to automatically adapt the pretrained weights to the downstream task, handling differences in patch size, spacing, and number of input channels. See `--help` for all CLI options.
 
 ## References
 - [Lightly](https://github.com/lightly-ai/lightly)
