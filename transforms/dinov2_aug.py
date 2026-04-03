@@ -111,6 +111,6 @@ class DINOv2Augmentation3D(nn.Module):
         global_views = [self.global_aug(deepcopy(x)) for _ in range(2)]
         views.extend(global_views)
         if self.local_aug is not None:
-            local_views = [self.local_aug(x) for _ in range(self.num_local_views)]
+            local_views = [self.local_aug(deepcopy(x)) for _ in range(self.num_local_views)]
             views.extend(local_views)
         return views

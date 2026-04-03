@@ -59,7 +59,8 @@ lightning_module:
     gradient_clip_val: 3.0
     teacher_temp_warmup_epochs: "$int(@trainer#max_epochs * 0.5)"
     teacher_temp_min: 0.04
-    teacher_temp_max: 0.07
+    teacher_temp_max: 0.05
+    center_momentum: 0.99
     freeze_last_layer_epochs: 1
     projection_dim: 65536  # reduced projection dim (was 131072), less memory
     weight_decay: 0.04
@@ -111,9 +112,9 @@ data_module:
             - _target_: torchvision.transforms.Lambda
               lambd: "$lambda x: x['image'].as_tensor()"
             - _target_: project.transforms.dinov2_aug.DINOv2Augmentation3D
-              global_view_scale: [0.3, 1.0]
+              global_view_scale: [0.5, 1.0]
               global_view_size: "$@img_size[0]"
-              local_view_scale: [0.3, 1.0]
+              local_view_scale: [0.2, 0.5]
               local_view_size: [24, 24, 24]
               num_local_views: 4
             - _target_: torchvision.transforms.Lambda
