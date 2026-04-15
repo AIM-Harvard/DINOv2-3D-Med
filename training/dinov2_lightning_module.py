@@ -277,7 +277,7 @@ class DINOv2_3D_LightningModule(LightningModule):
         # Apply weight decay schedule
         weight_decay = cosine_schedule(
             step=self.trainer.global_step,
-            max_steps=max(self.trainer.estimated_stepping_batches, 1),
+            max_steps=getattr(self, "_training_max_steps", max(self.trainer.estimated_stepping_batches, 1)),
             start_value=self.weight_decay,
             end_value=self.weight_decay_end,
         )

@@ -62,10 +62,10 @@ lightning_module:
     teacher_temp_max: 0.05
     center_momentum: 0.99
     norm_last_layer: True
-    weight_decay_end: 0.2
     freeze_last_layer_epochs: 1
     projection_dim: 65536  # reduced projection dim (was 131072), less memory
     weight_decay: 0.04
+    weight_decay_end: 0.2
     backbone:
 
 data_module:
