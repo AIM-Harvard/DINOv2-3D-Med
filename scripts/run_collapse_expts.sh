@@ -11,7 +11,7 @@ BASE_CONFIGS="./configs/train.yaml,./configs/models/primus.yaml,./configs/datase
 EXPTS_DIR="./configs/experiments"
 
 # Ordered list of all experiment IDs
-ALL_EXPTS=(00 01 02 03 04 05 06 07 08)
+ALL_EXPTS=(01 02 03 04 05 06 07 08)
 
 # If args provided, use those; otherwise run all
 EXPTS=("${@:-${ALL_EXPTS[@]}}")
