@@ -1,0 +1,11 @@
+run_name: "collapse_exp07_stable_combo"
+# Kitchen-sink of the most likely fixes combined:
+#   - Lower LR to reduce gradient spikes
+#   - Fast center to track teacher distribution from epoch 1
+#   - Tighter gradient clipping
+#   - Smaller projection head to reduce collapse surface area
+lightning_module:
+  base_lr: 0.002
+  center_momentum: 0.9
+  gradient_clip_val: 1.0
+  projection_dim: 16384

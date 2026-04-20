@@ -1,0 +1,7 @@
+run_name: "collapse_exp06_longer_freeze"
+# Hypothesis: freeze_last_layer_epochs=1 is too short — the projection head
+# last layer needs more warmup before gradients can safely flow through it.
+# Paired with longer teacher-temp warmup to give the model more time to stabilise.
+lightning_module:
+  freeze_last_layer_epochs: 5
+  teacher_temp_warmup_epochs: "$int(@trainer#max_epochs * 0.7)"

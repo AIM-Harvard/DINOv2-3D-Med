@@ -1,0 +1,4 @@
+run_name: "collapse_exp02_very_low_lr"
+# Hypothesis: aggressively lower LR for maximum stability during early epochs.
+lightning_module:
+  base_lr: 0.001

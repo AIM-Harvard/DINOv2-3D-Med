@@ -1,0 +1,5 @@
+run_name: "collapse_exp05_hard_clip"
+# Hypothesis: norm_last_layer=True introduces weight_norm which can interact
+# badly with gradient spikes. clip_val=1.0 instead of 3.0 prevents these spikes.
+lightning_module:
+  gradient_clip_val: 1.0
