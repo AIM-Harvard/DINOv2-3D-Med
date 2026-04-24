@@ -109,7 +109,7 @@ class DINOv2_3D_Meta_Architecture(nn.Module):
     def __init__(
         self,
         hidden_size: int = 768,
-        norm_last_layer: bool = False,
+        norm_last_layer: bool = True,
         ibot_separate_head: bool = True,
         freeze_last_layer_epochs: int = 0,
         projection_dim: int = 65536,

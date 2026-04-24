@@ -69,7 +69,7 @@ class GramMatrixCallbackTests(unittest.TestCase):
 
     def test_cadence_skips_step_zero_and_non_interval_steps(self):
         callback = GramMatrixCallback(log_every_n_steps=10)
-        pl_module = _FakeLightningModule({"pred": {"teacher_cls_token": torch.randn(8, 6)}})
+        pl_module = _FakeLightningModule({"teacher_cls_token": torch.randn(8, 6)})
         batch = (torch.randn(8, 6),)
 
         trainer_step_zero = _FakeTrainer(global_step=0, logger=_FakeWandbLogger())
@@ -87,7 +87,7 @@ class GramMatrixCallbackTests(unittest.TestCase):
             feature_key="student_cls_token",
             max_samples=4,
         )
-        pl_module = _FakeLightningModule({"pred": {"student_cls_token": torch.randn(12, 8)}})
+        pl_module = _FakeLightningModule({"student_cls_token": torch.randn(12, 8)})
         trainer = _FakeTrainer(global_step=10, logger=_FakeWandbLogger())
         batch = (torch.randn(12, 8),)
         captured = {}
@@ -103,7 +103,7 @@ class GramMatrixCallbackTests(unittest.TestCase):
 
     def test_missing_feature_key_logs_warning_and_returns_safely(self):
         callback = GramMatrixCallback(log_every_n_steps=1, feature_key="missing_key")
-        pl_module = _FakeLightningModule({"pred": {"teacher_cls_token": torch.randn(6, 5)}})
+        pl_module = _FakeLightningModule({"teacher_cls_token": torch.randn(6, 5)})
         trainer = _FakeTrainer(global_step=1, logger=_FakeWandbLogger())
         batch = (torch.randn(6, 5),)
 
@@ -164,7 +164,7 @@ class GramMatrixCallbackTests(unittest.TestCase):
 
     def test_ddp_all_reduce_gate_prevents_all_gather_on_invalid_rank(self):
         callback = GramMatrixCallback(log_every_n_steps=1)
-        pl_module = _FakeLightningModule({"pred": {"teacher_cls_token": torch.randn(10, 8)}})
+        pl_module = _FakeLightningModule({"teacher_cls_token": torch.randn(10, 8)})
         trainer = _FakeTrainer(global_step=1, world_size=2, logger=_FakeWandbLogger())
         batch = (torch.randn(10, 8),)
 
@@ -188,7 +188,7 @@ class GramMatrixCallbackTests(unittest.TestCase):
 
     def test_ddp_gather_handles_uneven_rank_counts(self):
         callback = GramMatrixCallback(log_every_n_steps=1, max_samples=8)
-        pl_module = _FakeLightningModule({"pred": {"student_cls_token": torch.randn(5, 4)}})
+        pl_module = _FakeLightningModule({"student_cls_token": torch.randn(5, 4)})
         trainer = _FakeTrainer(global_step=1, world_size=2, logger=_FakeWandbLogger())
         batch = (torch.randn(5, 4),)
         captured = {}
@@ -241,10 +241,8 @@ class GramMatrixCallbackTests(unittest.TestCase):
         fallback = torch.randn(8, 4)
         pl_module = _FakeLightningModule(
             {
-                "pred": {
-                    "teacher_cls_token": primary,
-                    "teacher_cls_token_backbone": fallback,
-                }
+                "teacher_cls_token": primary,
+                "teacher_cls_token_backbone": fallback,
             }
         )
         trainer = _FakeTrainer(global_step=1, logger=_FakeWandbLogger())
@@ -272,10 +270,8 @@ class GramMatrixCallbackTests(unittest.TestCase):
         fallback = torch.ones(8, 4)
         pl_module = _FakeLightningModule(
             {
-                "pred": {
-                    "teacher_cls_token": primary,
-                    "teacher_cls_token_backbone": fallback,
-                }
+                "teacher_cls_token": primary,
+                "teacher_cls_token_backbone": fallback,
             }
         )
         trainer = _FakeTrainer(global_step=1, logger=_FakeWandbLogger())
@@ -296,7 +292,7 @@ class GramMatrixCallbackTests(unittest.TestCase):
             max_samples=8,
         )
         pl_module = _FakeLightningModule(
-            {"pred": {"teacher_cls_token": torch.randn(8, 4)}}
+            {"teacher_cls_token": torch.randn(8, 4)}
         )
         trainer = _FakeTrainer(global_step=1, logger=_FakeWandbLogger())
         batch = ([torch.randn(8, 4), torch.randn(8, 4)],)
@@ -316,7 +312,7 @@ class GramMatrixCallbackTests(unittest.TestCase):
 
     def test_disabled_wandb_skips_diagnostics_telemetry(self):
         callback = GramMatrixCallback(log_every_n_steps=1, feature_key="missing_key")
-        pl_module = _FakeLightningModule({"pred": {"teacher_cls_token": torch.randn(6, 5)}})
+        pl_module = _FakeLightningModule({"teacher_cls_token": torch.randn(6, 5)})
         trainer = _FakeTrainer(global_step=1, logger=_FakeWandbLogger())
         batch = (torch.randn(6, 5),)
 
@@ -387,10 +383,8 @@ class GramMatrixCallbackTests(unittest.TestCase):
         )
         pl_module = _FakeLightningModule(
             {
-                "pred": {
-                    "teacher_cls_token": primary,
-                    "teacher_cls_token_backbone": primary.clone(),
-                }
+                "teacher_cls_token": primary,
+                "teacher_cls_token_backbone": primary.clone(),
             }
         )
         trainer = _FakeTrainer(global_step=1, logger=_FakeWandbLogger())

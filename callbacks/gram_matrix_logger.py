@@ -121,7 +121,7 @@ class GramMatrixCallback(Callback):
                         model_outputs = pl_module.model(views)
 
                         # Safe nested dictionary access
-                        pred_dict = model_outputs.get("pred", {})
+                        pred_dict = model_outputs
                         features = pred_dict.get(self.feature_key, None)
                         fallback_key = self._fallback_feature_key_for(self.feature_key)
                         if fallback_key is not None:

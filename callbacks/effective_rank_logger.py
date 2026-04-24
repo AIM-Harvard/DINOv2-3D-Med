@@ -107,7 +107,7 @@ class EffectiveRankCallback(Callback):
                         else:
                             views = views_container[: min(2, len(views_container))]
                             model_outputs = pl_module.model(views)
-                            pred_dict = model_outputs.get("pred", {})
+                            pred_dict = model_outputs
                             features = pred_dict.get(self.feature_key, None)
                             if features is None or features.dim() != 2:
                                 if trainer.global_rank == 0:

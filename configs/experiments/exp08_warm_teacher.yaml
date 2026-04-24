@@ -1,0 +1,7 @@
+run_name: "collapse_exp08_warm_teacher"
+# Hypothesis: teacher_temp_min=0.04 makes the teacher extremely sharp at epoch 0
+# relative to the student (temp=0.1). This overconfident teacher signal can
+# cause early collapse. Using a warmer initial teacher temp (0.07) softens
+# the initial targets and gives the student room to learn.
+lightning_module#teacher_temp_min: 0.07
+lightning_module#teacher_temp_max: 0.07

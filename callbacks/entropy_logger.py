@@ -94,7 +94,7 @@ class TeacherEntropyCallback(Callback):
                         else:
                             views = views_container[: min(2, len(views_container))]
                             model_outputs = pl_module.model(views)
-                            pred_dict = model_outputs.get("pred", {})
+                            pred_dict = model_outputs
                             teacher_logits = pred_dict.get("teacher_cls_token", None)
                             if teacher_logits is None or teacher_logits.dim() != 2:
                                 if trainer.global_rank == 0:

@@ -46,6 +46,9 @@ class DINOv2_3D_LightningModule(LightningModule):
         teacher_temp_warmup_epochs: int = 30,
         teacher_temp_min: float = 0.04,
         teacher_temp_max: float = 0.07,
+        center_momentum: float = 0.9,
+        norm_last_layer: bool = True,
+        weight_decay_end: float = 0.2,
         freeze_last_layer_epochs: int = 0,
         projection_dim: int = 65536,
         backbone: nn.Module = None,
@@ -67,12 +70,13 @@ class DINOv2_3D_LightningModule(LightningModule):
         self.teacher_temp_min = teacher_temp_min
         self.teacher_temp_max = teacher_temp_max
         self.freeze_last_layer_epochs = freeze_last_layer_epochs
+        self.weight_decay_end = weight_decay_end
         self.metrics = {"train": None, "val": None}
 
         # Model
         self.model = DINOv2_3D_Meta_Architecture(
             hidden_size=hidden_size,
-            norm_last_layer=False,
+            norm_last_layer=norm_last_layer,
             ibot_separate_head=ibot_separate_head,
             freeze_last_layer_epochs=freeze_last_layer_epochs,
             projection_dim=projection_dim,
@@ -84,6 +88,7 @@ class DINOv2_3D_LightningModule(LightningModule):
             teacher_temp_min=teacher_temp_min,
             teacher_temp_max=teacher_temp_max,
             teacher_temp_warmup_epochs=teacher_temp_warmup_epochs,
+            center_momentum=center_momentum,
             output_dim=projection_dim,
             ibot_loss_weight=1.0,
             koleo_loss_weight=0.1,
@@ -272,9 +277,9 @@ class DINOv2_3D_LightningModule(LightningModule):
         # Apply weight decay schedule
         weight_decay = cosine_schedule(
             step=self.trainer.global_step,
-            max_steps=max(self.trainer.estimated_stepping_batches, 1),
-            start_value=0.04,
-            end_value=0.4,
+            max_steps=getattr(self, "_training_max_steps", max(self.trainer.estimated_stepping_batches, 1)),
+            start_value=self.weight_decay,
+            end_value=self.weight_decay_end,
         )
         updates = []
         for group in optimizer.param_groups:
