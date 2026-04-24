@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-BASE_CONFIGS="./configs/train.yaml,./configs/models/primus.yaml,./configs/datasets/amos.yaml"
+BASE_CONFIGS="./configs/train.yaml,./configs/models/primus.yaml,./configs/datasets/idc_dump.yaml"
 EXPTS_DIR="./configs/experiments"
 
 # Ordered list of all experiment IDs

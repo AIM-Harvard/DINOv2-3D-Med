@@ -1,5 +1,4 @@
 run_name: "collapse_exp04_small_proj"
 # Hypothesis: projection_dim=65536 is very large for a small medical dataset.
 # Smaller output space is easier to fill and less prone to degenerate solutions.
-lightning_module:
-  projection_dim: 16384
+lightning_module#projection_dim: 16384

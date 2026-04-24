@@ -1,5 +1,4 @@
 run_name: "collapse_exp01_lower_lr"
 # Hypothesis: base_lr=0.004 is too high for the effective batch size (~120),
 # causing gradient spikes that destabilise weight-normalised last layer early.
-lightning_module:
-  base_lr: 0.002
+lightning_module#base_lr: 0.002
