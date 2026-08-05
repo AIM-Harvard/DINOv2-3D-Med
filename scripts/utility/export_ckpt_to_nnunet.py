@@ -8,6 +8,7 @@ import argparse
 import torch
 import os
 import sys
+from pathlib import Path
 from typing import Dict, Any
 
 # Ensure project root is on sys.path so 'utils' and project modules resolve
@@ -38,10 +39,7 @@ def modify_state_dict(state_dict: Dict[str, Any]) -> Dict[str, Any]:
 def process_checkpoint(input_path: str, output_path: str,
                       remove_cls_token: bool = True,
                       arch_class_name: str = 'PrimusM',
-                      pretrain_spacing: list = None,
-                      pretrain_patch_size: list = None,
-                      pretrain_num_input_channels: int = 1,
-                      downstream_patch_size: list = None) -> None:
+                      project_path: str = '.') -> None:
     """Process checkpoint file and save in nnUNet format"""
 
     if pretrain_spacing is None:
@@ -52,9 +50,18 @@ def process_checkpoint(input_path: str, output_path: str,
         downstream_patch_size = pretrain_patch_size
 
     # Import project module to handle checkpoint dependencies
-    project_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    import_module_from_path("project", project_path)
-
+    # Normalize and resolve project path
+    project_path = Path(project_path).expanduser()
+    
+    if not project_path.is_absolute():
+        # Resolve relative to the repository root
+        script_dir = Path(__file__).resolve().parent.parent.parent
+        project_path = (script_dir / project_path).resolve()
+    else:
+        project_path = project_path.resolve()
+    
+    import_module_from_path("project", str(project_path))
+    
     print(f"Loading checkpoint from: {input_path}")
     try:
         ckpt = torch.load(input_path, weights_only=False, map_location='cpu')
@@ -118,18 +125,9 @@ def main():
                        help="Architecture class name (default: PrimusM)")
     parser.add_argument("--keep-cls-token", action="store_true",
                        help="Keep CLS token in positional embeddings")
-    parser.add_argument("--pretrain-spacing", type=float, nargs=3, default=[1.0, 1.0, 1.0],
-                       metavar=("Z", "Y", "X"),
-                       help="Voxel spacing used during pretraining in mm (default: 1.0 1.0 1.0)")
-    parser.add_argument("--pretrain-patch-size", type=int, nargs=3, default=[96, 96, 96],
-                       metavar=("Z", "Y", "X"),
-                       help="Input patch size used during pretraining (default: 96 96 96)")
-    parser.add_argument("--downstream-patch-size", type=int, nargs=3, default=None,
-                       metavar=("Z", "Y", "X"),
-                       help="Recommended downstream patch size (default: same as pretrain-patch-size)")
-    parser.add_argument("--pretrain-num-input-channels", type=int, default=1,
-                       help="Number of input channels during pretraining (default: 1)")
-
+    parser.add_argument("--project-path", default=".",
+                       help="Path to the project root (default: current directory)")
+    
     args = parser.parse_args()
 
     if not os.path.exists(args.input_path):
@@ -145,10 +143,7 @@ def main():
             output_path=args.output_path,
             remove_cls_token=not args.keep_cls_token,
             arch_class_name=args.arch_class_name,
-            pretrain_spacing=args.pretrain_spacing,
-            pretrain_patch_size=args.pretrain_patch_size,
-            pretrain_num_input_channels=args.pretrain_num_input_channels,
-            downstream_patch_size=downstream_patch_size,
+            project_path=args.project_path
         )
         print("Checkpoint conversion completed successfully!")
     except Exception as e:

@@ -6,6 +6,7 @@ Script to run 3D DINOv2 training or prediction using a YAML config.
 
 import os
 from pathlib import Path
+from torch.utils.data import DataLoader
 from monai.bundle import ConfigParser
 
 import fire
@@ -123,13 +124,20 @@ def run(mode, config_file: str, **config_overrides):
             "Set 'project' to your repository root path."
         ) from exc
 
-    try:
-        import_module_from_path("project", project_path)
-    except Exception as exc:
-        raise ValueError(
-            f"Failed to load project module from '{project_path}': {exc}. "
-            "Ensure the project path exists and contains __init__.py."
-        ) from exc
+    project_path = parser.get("project")
+    
+    # Normalize and resolve project path
+    # If project_path is relative, resolve it relative to the repository root
+    project_path = Path(project_path).expanduser()
+    
+    if not project_path.is_absolute():
+        # Get the repository root (parent of the scripts directory)
+        repo_root = Path(__file__).resolve().parent.parent
+        project_path = (repo_root / project_path).resolve()
+    else:
+        project_path = project_path.resolve()
+    
+    import_module_from_path("project", str(project_path))
 
     trainer = _load_parsed_component(
         parser,
