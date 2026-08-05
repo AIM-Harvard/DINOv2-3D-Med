@@ -1,0 +1,5 @@
+run_name: "collapse_exp03_fast_center"
+# Hypothesis: center_momentum=0.99 adapts too slowly at the start — the center
+# lags the true teacher mean, giving wrong soft targets and incorrect gradients
+# for the first many epochs. Reverting to 0.9 makes the center responsive.
+lightning_module#center_momentum: 0.9

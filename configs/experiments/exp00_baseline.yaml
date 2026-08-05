@@ -1,0 +1,3 @@
+run_name: "collapse_exp00_baseline"
+# Control run — no changes from train.yaml defaults.
+# Establishes the collapse timing baseline.

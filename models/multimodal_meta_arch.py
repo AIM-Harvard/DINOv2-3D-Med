@@ -7,8 +7,8 @@ import torch
 from torch import nn
 from typing import Optional, Dict, Any, Union, List
 
-from DINOv2_3D.models.backbones.vision_enc_wrapper import create_enhanced_vision_encoder
-from models.backbones.text_encoder import create_text_encoder
+# from models.backbones.vision_enc_wrapper import create_enhanced_vision_encoder
+# from models.backbones.text_encoder import create_text_encoder
 from losses.image_text_alignment import ImageTextAlignmentLoss
 
 

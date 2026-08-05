@@ -38,7 +38,7 @@ class DINOv2_3D_LightningModule(LightningModule):
         batch_size_per_device: int,
         hidden_size: int = 768,
         ibot_separate_head: bool = True,
-        base_lr: float = 0.0005,  # Reduced from 0.004 as per issue #6
+        base_lr: float = 0.004,  # Reference LR at effective batch size 1024
         min_lr: float = 1e-6,
         weight_decay: float = 0.04,
         layer_decay: float = 0.9,
@@ -46,6 +46,9 @@ class DINOv2_3D_LightningModule(LightningModule):
         teacher_temp_warmup_epochs: int = 30,
         teacher_temp_min: float = 0.04,
         teacher_temp_max: float = 0.07,
+        center_momentum: float = 0.9,
+        norm_last_layer: bool = True,
+        weight_decay_end: float = 0.2,
         freeze_last_layer_epochs: int = 0,
         projection_dim: int = 65536,
         backbone: nn.Module = None,
@@ -67,13 +70,15 @@ class DINOv2_3D_LightningModule(LightningModule):
         self.teacher_temp_min = teacher_temp_min
         self.teacher_temp_max = teacher_temp_max
         self.freeze_last_layer_epochs = freeze_last_layer_epochs
+        self.weight_decay_end = weight_decay_end
         self.metrics = {"train": None, "val": None}
 
         # Model
         self.model = DINOv2_3D_Meta_Architecture(
             hidden_size=hidden_size,
-            norm_last_layer=False,
+            norm_last_layer=norm_last_layer,
             ibot_separate_head=ibot_separate_head,
+            freeze_last_layer_epochs=freeze_last_layer_epochs,
             projection_dim=projection_dim,
             backbone=backbone,
         )
@@ -83,6 +88,7 @@ class DINOv2_3D_LightningModule(LightningModule):
             teacher_temp_min=teacher_temp_min,
             teacher_temp_max=teacher_temp_max,
             teacher_temp_warmup_epochs=teacher_temp_warmup_epochs,
+            center_momentum=center_momentum,
             output_dim=projection_dim,
             ibot_loss_weight=1.0,
             koleo_loss_weight=0.1,
@@ -119,7 +125,7 @@ class DINOv2_3D_LightningModule(LightningModule):
 
         # Calculate losses with proper scheduling
         loss_dict = self.criterion(
-            outputs["pred"], global_step=self.trainer.global_step
+            outputs, global_step=self.trainer.global_step
         )
 
         # Log losses
@@ -142,11 +148,14 @@ class DINOv2_3D_LightningModule(LightningModule):
         return self.model(x)
 
     def configure_optimizers(self):
-        # Calculate learning rate based on batch size
-        lr_scale = math.sqrt(
-            self.batch_size_per_device * self.trainer.world_size / 1024
+        # Scale LR by effective batch size relative to reference batch size of 1024.
+        # Effective batch = per-device batch × num devices × grad accumulation steps.
+        effective_batch_size = (
+            self.batch_size_per_device
+            * self.trainer.world_size
+            * self.trainer.accumulate_grad_batches
         )
-        lr = self.base_lr * lr_scale
+        lr = self.base_lr * math.sqrt(effective_batch_size / 1024)
         num_layers = len(self.model.student_backbone.vit.blocks)
 
         def lr_layer(layer_idx: int) -> float:
@@ -240,6 +249,11 @@ class DINOv2_3D_LightningModule(LightningModule):
 
         self.criterion.max_steps = max_steps
         self.criterion.max_epochs = self.trainer.max_epochs
+        # Store so on_train_batch_end uses the same max_steps for the teacher EMA
+        # schedule. Previously it used max(estimated_stepping_batches, 1000) while
+        # the loss used max(estimated_stepping_batches, 1), causing misaligned
+        # momentum and temperature schedules on short experiments.
+        self._training_max_steps = max_steps
         return [optimizer], [scheduler]
 
     def configure_gradient_clipping(
@@ -257,14 +271,15 @@ class DINOv2_3D_LightningModule(LightningModule):
 
     def on_before_optimizer_step(self, optimizer: AdamW, *args) -> None:
         # Cancel last layer gradients during warmup (issue #5)
-        self.model.cancel_last_layer_gradients(self.current_epoch)
+        # Note: now uses LR zeroing (DINOv2 mechanism) instead of gradient-zeroing
+        self.model.cancel_last_layer_gradients(optimizer, self.current_epoch)
 
         # Apply weight decay schedule
         weight_decay = cosine_schedule(
             step=self.trainer.global_step,
-            max_steps=max(self.trainer.estimated_stepping_batches, 1),
-            start_value=0.04,
-            end_value=0.4,
+            max_steps=getattr(self, "_training_max_steps", max(self.trainer.estimated_stepping_batches, 1)),
+            start_value=self.weight_decay,
+            end_value=self.weight_decay_end,
         )
         updates = []
         for group in optimizer.param_groups:
@@ -274,8 +289,10 @@ class DINOv2_3D_LightningModule(LightningModule):
         update_param_groups(optimizer, updates=updates)
 
     def on_train_batch_end(self, outputs, batch, batch_idx):
-        # EMA update of teacher - DDP handles synchronization automatically
-        max_steps = max(self.trainer.estimated_stepping_batches, 1000)
+        # EMA update of teacher - DDP handles synchronization automatically.
+        # Use _training_max_steps set by configure_optimizers so the teacher
+        # momentum schedule stays aligned with the loss temperature schedule.
+        max_steps = getattr(self, "_training_max_steps", max(self.trainer.estimated_stepping_batches, 1))
         self.model.update_teacher(
             global_step=self.trainer.global_step, max_steps=max_steps
         )
