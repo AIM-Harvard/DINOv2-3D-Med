@@ -42,7 +42,7 @@ dependencies = [
     "lightning-utilities==0.14.3",
     "markupsafe==3.0.2",
     "matplotlib>=3.5.0,<4.0.0",
-    "monai==1.4.0",
+    "monai==1.5.2",
     "mpmath==1.3.0",
     "multidict==6.6.3",
     "networkx==3.5",
